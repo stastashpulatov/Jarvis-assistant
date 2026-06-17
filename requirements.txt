@@ -1,0 +1,24 @@
+# Core AI
+google-genai>=1.0.0
+requests>=2.30.0
+
+# Speech Recognition
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.14
+sounddevice>=0.4.6
+
+# TTS — pyttsx3 (резерв, всегда работает)
+pyttsx3>=2.90
+
+# TTS — Silero (основной голос, офлайн, Python 3.12+, CUDA)
+# torch устанавливается отдельно в start.bat с CUDA поддержкой
+# soundfile нужен для Silero
+
+soundfile>=0.12.0
+
+# Utils
+psutil>=5.9.0
+PyYAML>=6.0
+rapidfuzz>=3.0.0
+pycaw>=20181226
+numpy>=1.24.0

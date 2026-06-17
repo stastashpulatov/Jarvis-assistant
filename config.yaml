@@ -1,0 +1,58 @@
+# ============================================================
+#              J.A.R.V.I.S.  —  Конфигурация
+# ============================================================
+
+A:
+  name: "J.A.R.V.I.S."
+  wakeword: "джарвис"
+  command_timeout: 12
+  idle_timeout: 90
+  always_on: true
+
+audio:
+  silence_timeout: 1.0
+  energy_threshold: 300
+  phrase_limit: 10
+
+voice:
+  # silero  — нейросеть, русский язык, CUDA (рекомендуется)
+  # pyttsx3 — встроенный Windows голос (резерв)
+  engine: "silero"
+
+  # Голоса Silero: aidar (муж), baya, kseniya, xenia (жен), eugene
+  silero_speaker: "aidar"
+
+  offline_rate: 160
+  offline_volume: 1.0
+
+ai:
+  provider: "ollama"
+  fallback_provider: "gemini"
+
+ollama:
+  base_url: "http://127.0.0.1:11434"
+  model: "qwen2.5:7b-instruct"
+  fallback_model: "qwen2.5:3b-instruct"
+  num_predict: 160
+  temperature: 0.35
+  timeout: 45
+
+gemini:
+  api_key: "YOUR_GEMINI_API_KEY"
+  model: "gemini-2.5-flash"
+  max_tokens: 350
+  temperature: 0.45
+  quota_cooldown_seconds: 90
+
+logging:
+  enabled: true
+  level: "INFO"
+
+jarvis:
+  user_name: "сэр"
+  city: "Tashkent"
+  boot_animation: true
+  proactive: false
+  suggestion_interval: 1200
+  focus_minutes: 50
+  break_minutes: 10

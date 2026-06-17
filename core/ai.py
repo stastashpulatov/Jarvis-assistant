@@ -1,0 +1,326 @@
+"""
+Мозг Джарвиса: Ollama локально + Gemini как резерв.
+Локальный парсер всё равно работает первым; сюда попадают только сложные фразы.
+"""
+import re
+import json
+import time
+import requests
+
+
+SYSTEM_PROMPT = """Ты J.A.R.V.I.S. — искусственный интеллект из вселенной «Железного человека».
+Just A Rather Very Intelligent System. Управляешь компьютером Windows для сэра.
+
+ХАРАКТЕР (как в фильме):
+- Спокойный, уверенный, немного ироничный британский дворецкий — но на русском языке.
+- Всегда «сэр». Никогда не паникуешь.
+- Кратко и по делу — ответы озвучиваются вслух (1-2 предложения).
+- При успехе: «Выполняю, сэр» / «Готово, сэр» / «Как прикажете, сэр».
+- Можешь добавить лёгкий юмор, но не перебарщивай.
+
+ПРАВИЛА:
+1. Отвечай ТОЛЬКО на русском языке.
+1.1. Никогда не отвечай на китайском или английском, даже если модель пытается продолжить не тем языком.
+2. Выполняй ВСЕ части запроса — не откладывай.
+3. JSON команды — на ОТДЕЛЬНОЙ строке в конце.
+4. Для нескольких действий используй массив "actions".
+
+ДОСТУПНЫЕ КОМАНДЫ:
+{"action": "open_app", "target": "chrome"}
+{"action": "open_url", "target": "https://...", "browser": "msedge"}
+{"action": "open_urls", "browser": "msedge", "urls": ["...", "..."]}
+{"action": "search_web", "query": "..."}
+{"action": "system_info"} / {"action": "diagnostics"}
+{"action": "weather", "city": "Москва"}
+{"action": "battery"}
+{"action": "screenshot"} / {"action": "show_desktop"} / {"action": "empty_trash"}
+{"action": "volume_up"} / {"action": "volume_down"} / {"action": "volume_mute"}
+{"action": "volume_set", "level": 60} / {"action": "volume_get"}
+{"action": "media_play_pause"} / {"action": "media_next"} / {"action": "media_previous"}
+{"action": "open_folder", "target": "downloads"}
+{"action": "create_note", "text": "текст заметки"}
+{"action": "timer", "seconds": 300, "message": "перерыв окончен"}
+{"action": "show_time"}
+{"action": "close_app", "target": "chrome"}
+{"action": "shutdown"} / {"action": "restart"} / {"action": "lock"}
+{"action": "none"}
+
+ПРОТОКОЛЫ (скажи пользователю что активируешь):
+- рабочий режим → vscode + браузер
+- игровой режим → steam + discord
+- ночной режим → volume_set 15
+- экстренный протокол → lock
+- режим презентации → show_desktop
+
+ПРИЛОЖЕНИЯ: chrome, msedge, firefox, notepad, explorer, calc, vscode,
+spotify, discord, telegram, steam, vlc, nvidia, epicgames, obs и др.
+
+ПРИМЕРЫ:
+Запрос: включи игровой протокол
+Ответ: Игровой протокол активирован, сэр.
+{"actions": [{"action": "open_app", "target": "steam"}, {"action": "open_app", "target": "discord"}, {"action": "volume_set", "level": 75}]}
+
+Запрос: погода в Москве
+Ответ: Сейчас проверю, сэр.
+{"action": "weather", "city": "Moscow"}
+
+Запрос: полная диагностика
+Ответ: Запускаю диагностику всех систем, сэр.
+{"action": "diagnostics"}
+
+Запрос: поставь звук на 60
+Ответ: Устанавливаю громкость, сэр.
+{"action": "volume_set", "level": 60}
+
+Запрос: кто ты
+Ответ: Я J.A.R.V.I.S. — Just A Rather Very Intelligent System, сэр.
+{"action": "none"}
+"""
+
+
+class GeminiAI:
+    def __init__(self, cfg: dict, log):
+        self.cfg     = cfg
+        self.log     = log
+        self.client  = None
+        self.provider = self.cfg.get("ai", {}).get("provider", "ollama").lower()
+        self.fallback_provider = self.cfg.get("ai", {}).get("fallback_provider", "gemini").lower()
+        self.active_provider = "none"
+        self.history = []
+        self.cooldown_until = 0.0
+        self._init()
+
+    def _init(self):
+        if self.provider == "ollama":
+            if self._init_ollama():
+                return
+            if self.fallback_provider != "gemini":
+                return
+
+        key = self.cfg["gemini"]["api_key"]
+        if key in ("ВАШ_КЛЮЧ_GEMINI", "", "YOUR_KEY"):
+            self.log.warn("AI", "Gemini API ключ не задан. Открой config.yaml и вставь ключ.")
+            return
+        try:
+            from google import genai
+            self.client = genai.Client(api_key=key)
+            self.active_provider = "gemini"
+            self.log.info("AI", f"Gemini подключён ({self.cfg['gemini']['model']})")
+        except Exception as e:
+            self.log.error("AI", f"Ошибка инициализации Gemini: {e}")
+
+    def _init_ollama(self) -> bool:
+        try:
+            url = self.cfg["ollama"]["base_url"].rstrip("/") + "/api/tags"
+            r = requests.get(url, timeout=3)
+            r.raise_for_status()
+            models = {m.get("name") for m in r.json().get("models", [])}
+            model = self.cfg["ollama"]["model"]
+            fallback = self.cfg["ollama"].get("fallback_model")
+            if model not in models and fallback in models:
+                self.cfg["ollama"]["model"] = fallback
+                model = fallback
+                self.log.warn("AI", f"Основная модель Ollama не найдена, использую {model}")
+            elif model not in models:
+                self.log.warn("AI", f"Модель Ollama {model} не найдена. Доступно: {', '.join(sorted(models)) or 'нет'}")
+                return False
+            self.active_provider = "ollama"
+            self.log.info("AI", f"Ollama подключена ({model})")
+            return True
+        except Exception as e:
+            self.log.warn("AI", f"Ollama недоступна: {e}")
+            return False
+
+    @property
+    def ready(self) -> bool:
+        return self.active_provider == "ollama" or self.client is not None
+
+    def ask(self, user_text: str) -> tuple:
+        """Возвращает (текст_для_озвучки, actions_list). actions_list может быть пустым."""
+        if not self.ready:
+            return "Сэр, нейросеть не подключена. Запустите Ollama или проверьте настройки в config.yaml.", []
+
+        if self.active_provider == "ollama":
+            return self._ask_ollama(user_text)
+
+        now = time.time()
+        if now < self.cooldown_until:
+            left = int(self.cooldown_until - now)
+            return f"Сэр, лимит Gemini временно исчерпан. Локальные команды работают, нейросеть вернётся примерно через {left} секунд.", []
+
+        self.history.append({
+            "role": "user",
+            "content": user_text,
+        })
+
+        # Держим историю короткой — быстрее и дешевле
+        if len(self.history) > 10:
+            self.history = self.history[-10:]
+
+        # Retry до 3 раз при 503 ошибке
+        last_error = None
+        for attempt in range(3):
+            try:
+                reply = self._send()
+                self.history.append({
+                    "role": "model",
+                    "content": reply,
+                })
+                if len(self.history) > 10:
+                    self.history = self.history[-10:]
+                self.log.debug("AI", f"Ответ: {reply[:100]}")
+                return self._parse(reply)
+
+            except Exception as e:
+                last_error = str(e)
+                if "429" in last_error or "RESOURCE_EXHAUSTED" in last_error:
+                    self._start_quota_cooldown(last_error)
+                    break
+                if "503" in last_error or "UNAVAILABLE" in last_error:
+                    wait = attempt + 1  # 1, 2, 3 секунды
+                    self.log.warn("AI", f"Сервер перегружен, повтор через {wait}с... (попытка {attempt+1}/3)")
+                    time.sleep(wait)
+                    continue
+                break
+
+        # Все попытки провалились
+        self.log.error("AI", f"Gemini API ошибка: {last_error}")
+        if self.history and self.history[-1]["role"] == "user":
+            self.history.pop()
+        if "429" in (last_error or "") or "RESOURCE_EXHAUSTED" in (last_error or ""):
+            return "Сэр, дневной лимит Gemini исчерпан. Я продолжу выполнять локальные команды без нейросети.", []
+        if "503" in (last_error or "") or "UNAVAILABLE" in (last_error or ""):
+            return "Серверы Gemini перегружены, сэр. Попробуйте через несколько секунд.", []
+        return "Прошу прощения, сэр. Ошибка соединения с сервером.", []
+
+    def _start_quota_cooldown(self, error_text: str) -> None:
+        retry = re.search(r"retryDelay['\"]?: ['\"](\d+)s", error_text)
+        seconds = int(retry.group(1)) if retry else int(self.cfg["gemini"].get("quota_cooldown_seconds", 90))
+        self.cooldown_until = time.time() + max(30, seconds)
+
+    def _send(self) -> str:
+        from google.genai import types
+        contents = []
+        for h in self.history:
+            role = "model" if h["role"] in ("assistant", "model") else "user"
+            contents.append({"role": role, "parts": [{"text": h["content"]}]})
+        response = self.client.models.generate_content(
+            model=self.cfg["gemini"]["model"],
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                max_output_tokens=int(self.cfg["gemini"]["max_tokens"]),
+                temperature=float(self.cfg["gemini"]["temperature"]),
+            )
+        )
+        return response.text.strip()
+
+    def _ask_ollama(self, user_text: str) -> tuple:
+        self.history.append({"role": "user", "content": user_text})
+        if len(self.history) > 8:
+            self.history = self.history[-8:]
+
+        url = self.cfg["ollama"]["base_url"].rstrip("/") + "/api/chat"
+        payload = {
+            "model": self.cfg["ollama"]["model"],
+            "stream": False,
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + self.history,
+            "options": {
+                "temperature": float(self.cfg["ollama"]["temperature"]),
+                "num_predict": int(self.cfg["ollama"]["num_predict"]),
+            },
+        }
+        try:
+            r = requests.post(url, json=payload, timeout=float(self.cfg["ollama"]["timeout"]))
+            r.raise_for_status()
+            reply = r.json().get("message", {}).get("content", "").strip()
+            if not reply:
+                raise RuntimeError("пустой ответ Ollama")
+            self.history.append({"role": "assistant", "content": reply})
+            if len(self.history) > 8:
+                self.history = self.history[-8:]
+            self.log.debug("AI", f"Ollama ответ: {reply[:100]}")
+            return self._parse(reply)
+        except Exception as e:
+            self.log.error("AI", f"Ollama ошибка: {e}")
+            if self.history and self.history[-1]["role"] == "user":
+                self.history.pop()
+            if self.fallback_provider == "gemini" and self.client is not None:
+                self.active_provider = "gemini"
+                self.log.warn("AI", "Переключаюсь на Gemini как резерв.")
+                return self.ask(user_text)
+            return "Сэр, Ollama сейчас недоступна. Локальные команды продолжают работать.", []
+
+    def _parse(self, full_text: str) -> tuple:
+        speech = full_text
+        actions: list[dict] = []
+
+        # Стратегия 1: ```json блок (может содержать actions-массив)
+        m = re.search(r'```(?:json)?\s*(\{[^`]+\})\s*```', full_text, re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group(1).strip())
+                speech = full_text[:m.start()].strip()
+                return self._clean(speech), self._extract_actions(data)
+            except Exception:
+                pass
+
+        # Стратегия 2: JSON на отдельных строках с конца (один или несколько)
+        lines = full_text.split("\n")
+        json_lines: list[dict] = []
+        last_json_idx = -1
+        for i in range(len(lines) - 1, -1, -1):
+            line = lines[i].strip()
+            if not line:
+                continue
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    json_lines.insert(0, json.loads(line))
+                    last_json_idx = i if last_json_idx == -1 else last_json_idx
+                    if i > 0 and lines[i - 1].strip().endswith("["):
+                        continue
+                    if "actions" in json_lines[0]:
+                        break
+                except Exception:
+                    break
+            elif json_lines:
+                break
+
+        if json_lines:
+            speech = "\n".join(lines[:last_json_idx]).strip() if last_json_idx >= 0 else speech
+            for data in json_lines:
+                actions.extend(self._extract_actions(data))
+            return self._clean(speech), actions
+
+        # Стратегия 3: любой JSON с "action" или "actions"
+        m = re.search(r'\{[^{}]*(?:"actions"|"action")[^{}]*(?:\[[^\]]*\])?[^{}]*\}', full_text, re.DOTALL)
+        if not m:
+            m = re.search(r'\{.*?"actions"\s*:\s*\[.*?\].*?\}', full_text, re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group(0))
+                speech = (full_text[:m.start()] + full_text[m.end():]).strip()
+                return self._clean(speech), self._extract_actions(data)
+            except Exception:
+                pass
+
+        return self._clean(speech), []
+
+    def _extract_actions(self, data: dict) -> list[dict]:
+        """Извлекает список action-dict из JSON."""
+        if not isinstance(data, dict):
+            return []
+        if "actions" in data and isinstance(data["actions"], list):
+            return [a for a in data["actions"] if isinstance(a, dict) and a.get("action")]
+        if data.get("action"):
+            return [data]
+        return []
+
+    def _clean(self, text: str) -> str:
+        text = re.sub(r'```(?:json)?\s*\{[^`]*\}\s*```', '', text, flags=re.DOTALL)
+        text = re.sub(r'\{[^{}]*"action"\s*:\s*"[^"]*"[^{}]*\}', '', text)
+        return text.strip()
+
+    def reset_history(self):
+        self.history.clear()
+        self.log.info("AI", "История диалога очищена")
