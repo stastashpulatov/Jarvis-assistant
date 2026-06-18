@@ -33,3 +33,12 @@ Thumbs.db
 jarvis_notes.txt
 *_silero_out.wav
 *_jarvis_out.wav
+
+rvc_env/
+dataset_raw/
+voices/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.bin
