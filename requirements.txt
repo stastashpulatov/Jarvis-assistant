@@ -6,6 +6,11 @@ requests>=2.30.0
 SpeechRecognition>=3.10.0
 pyaudio>=0.2.14
 sounddevice>=0.4.6
+vosk>=0.3.45
+# Скачать офлайн-модель речи (русский, лёгкая, ~50MB):
+#   https://alphacephei.com/vosk/models -> vosk-model-small-ru-0.22
+#   распакуй содержимое в models/small/ (должен получиться models/small/conf, models/small/am и т.д.)
+# Без модели STT автоматически использует Google STT (нужен интернет).
 
 # TTS — pyttsx3 (резерв, всегда работает)
 pyttsx3>=2.90

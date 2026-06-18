@@ -9,13 +9,21 @@ import webbrowser
 import datetime
 import time
 import threading
-import winreg
+
+try:
+    import winreg
+    _WINREG_AVAILABLE = True
+except ImportError:
+    winreg = None
+    _WINREG_AVAILABLE = False
 
 
 # ── Поиск в реестре Windows (самый надёжный способ) ─────────────
 
 def _find_in_registry(app_name: str) -> str | None:
     """Ищет путь к exe через реестр Windows."""
+    if not _WINREG_AVAILABLE:
+        return None
     keys_to_check = [
         r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths",
         r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths",

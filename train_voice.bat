@@ -17,10 +17,17 @@ if not exist rvc_env\RVC\infer-web.py (
     exit /b 1
 )
 
+if not exist voices\jarvis_sample.wav (
+    echo ERROR: voices\jarvis_sample.wav not found.
+    echo Put at least one WAV sample of the target voice into voices\ first.
+    pause
+    exit /b 1
+)
+
 echo Step 1: Preparing dataset folder...
 if not exist dataset_raw mkdir dataset_raw
 copy /Y voices\jarvis_sample.wav  dataset_raw\jarvis_sample.wav  >nul
-copy /Y voices\jarvis_sample1.wav dataset_raw\jarvis_sample1.wav >nul
+if exist voices\jarvis_sample1.wav copy /Y voices\jarvis_sample1.wav dataset_raw\jarvis_sample1.wav >nul
 echo OK - copied WAV samples to dataset_raw\
 
 if not exist rvc_env\RVC\rvc_infer.py copy /Y rvc_infer.py rvc_env\RVC\rvc_infer.py >nul
@@ -56,9 +63,25 @@ echo.
 echo Step 6: Training (200 epochs, batch 4, save every 50)...
 echo This is the GPU-heavy part. Please wait...
 set USE_LIBUV=0
-%PY% infer/modules/train/train.py -e %EXP% -sr 40k -f0 1 -bs 4 -te 200 -se 50 -pg assets/pretrained_v2/f0G40k.pth -pd assets/pretrained_v2/f0D40k.pth -l 0 -c 0 -sw 0 -v v2
+%PY% infer/modules/train/train.py -e %EXP% -sr 40k -f0 1 -bs 2 -te 200 -se 50 -pg assets/pretrained_v2/f0G40k.pth -pd assets/pretrained_v2/f0D40k.pth -l 0 -c 0 -sw 1 -v v2
 if errorlevel 1 (echo FAILED at training & cd ..\.. & pause & exit /b 1)
 echo OK
+
+if not exist assets\weights\%EXP%.pth (
+    echo.
+    echo WARNING: assets\weights\%EXP%.pth not found after training.
+    echo Trying to export weights from the last checkpoint...
+    if not exist assets\weights mkdir assets\weights
+    %PY% -c "import torch,glob,os; ckpts=sorted(glob.glob('logs/%EXP%/G_*.pth'), key=os.path.getmtime); src=ckpts[-1] if ckpts else None; print('Using checkpoint:', src); cpt=torch.load(src, map_location='cpu') if src else None; torch.save(cpt, 'assets/weights/%EXP%.pth') if cpt else print('NO CHECKPOINT FOUND')"
+    if not exist assets\weights\%EXP%.pth (
+        echo FAILED - could not produce assets\weights\%EXP%.pth automatically.
+        echo Check logs\%EXP%\ for G_*.pth checkpoints and export manually.
+        cd ..\..
+        pause
+        exit /b 1
+    )
+    echo OK - exported weights to assets\weights\%EXP%.pth
+)
 
 echo.
 echo Step 7: Building retrieval index...
@@ -72,7 +95,10 @@ echo.
 echo ============================================
 echo  TRAINING COMPLETE!
 echo  Model: rvc_env\RVC\logs\jarvis\
-echo  Weights: rvc_env\RVC\assets\weights\jarvis.pth (if -sw used)
-echo  or final checkpoint in logs\jarvis\
+echo  Weights: rvc_env\RVC\assets\weights\jarvis.pth
+echo  Index:   rvc_env\RVC\logs\jarvis\added_jarvis_v2.index
 echo ============================================
+echo Next step: run test_rvc.bat to hear the voice,
+echo then run start.bat (or python main.py) - JARVIS
+echo will automatically use the trained voice.
 pause

@@ -1,4 +1,3 @@
-@"
 # Python
 __pycache__/
 *.pyc
@@ -13,19 +12,14 @@ build/
 
 # Virtual Environment
 rvc_env/
+.venv/
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Data / large files (если есть большие модели)
+# Data / large files (модели, веса, чекпойнты)
 *.pth
 *.pt
 *.ckpt
@@ -33,8 +27,20 @@ venv.bak/
 *.bin
 dataset_raw/
 voices/
+models/
+
+# Логи и временные файлы
+*.log
+jarvis_notes.txt
+*_silero_out.wav
+*_jarvis_out.wav
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
-"@ | Out-File -FilePath .gitignore -Encoding utf8

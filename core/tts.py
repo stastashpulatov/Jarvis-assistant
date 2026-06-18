@@ -173,8 +173,6 @@ class TTSEngine:
 
     # ── RVC voice conversion ─────────────────────────────────────
 
-    # ── RVC voice conversion ─────────────────────────────────────
-
     def _apply_rvc(self, audio_arr):
         """
         Прогоняет аудио через RVC модель Джарвиса используя subprocess.
@@ -206,7 +204,7 @@ class TTSEngine:
                  in_path, out_path, pitch_shift, str(RVC_DIR)],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=90,
                 env=env,
             )
             
@@ -220,7 +218,7 @@ class TTSEngine:
             return data
             
         except subprocess.TimeoutExpired:
-            self.log.warn("TTS", "RVC таймаут (60с)")
+            self.log.warn("TTS", "RVC таймаут (90с)")
             return None
         except Exception as e:
             self.log.warn("TTS", f"RVC: {str(e)[:100]}")

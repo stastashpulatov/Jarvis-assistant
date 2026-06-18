@@ -14,12 +14,14 @@ STEPS:
    - Creates rvc_env/ (separate Python environment)
    - Installs torch+cuda, fairseq-fixed (has Python 3.12 wheel!),
      faiss, pyworld, parselmouth, etc.
-   - Clones RVC-WebUI into rvc_env/RVC
-   - Downloads pretrained models (~600MB):
-       hubert_base.pt, rmvpe.pt, f0G40k.pth, f0D40k.pth, ffmpeg.exe
-   - Verifies all imports work + checks CUDA
+   - Automatically continues into setup_rvc2.bat, which:
+       - Clones RVC-WebUI into rvc_env/RVC
+       - Downloads pretrained models (~600MB):
+           hubert_base.pt, rmvpe.pt, f0G40k.pth, f0D40k.pth, ffmpeg.exe
+       - Verifies all imports work + checks CUDA
 
-   Run this FIRST. If it fails, main Jarvis is untouched.
+   Run this FIRST (just setup_rvc.bat, it chains into part 2).
+   If it fails, main Jarvis is untouched.
    To remove: rmdir /s rvc_env
 
 2. train_voice.bat
@@ -44,12 +46,13 @@ TUNING:
 
   If voice sounds off, try retraining with more epochs (edit
   train_voice.bat: -te 200 -> -te 400) or adjust index_rate /
-  protect values inside rvc_infer.py.
+  protect values inside rvc_wrapper.py (used by core/tts.py at
+  runtime) and rvc_infer.py (used by test_rvc.bat).
 
 TROUBLESHOOTING:
   - If fairseq-fixed fails to install: main Jarvis still works,
     just delete rvc_env and run python main.py as before.
   - If training OOMs (out of memory): edit train_voice.bat,
     change "-bs 4" to "-bs 2".
-  - rvc_infer.py timeout (30s) can be increased in core/tts.py
+  - rvc_infer.py timeout (90s) can be increased in core/tts.py
     if your GPU is slower.

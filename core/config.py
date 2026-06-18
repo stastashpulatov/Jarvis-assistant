@@ -21,6 +21,7 @@ _DEFAULT_CONFIG = {
         "silero_speaker": "aidar",
         "offline_rate": 160,
         "offline_volume": 1.0,
+        "rvc_pitch_shift": 0,
     },
     "gemini": {
         "api_key": "",

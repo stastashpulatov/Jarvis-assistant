@@ -25,6 +25,10 @@ voice:
   offline_rate: 160
   offline_volume: 1.0
 
+  # Применяется только если RVC настроен (rvc_env/RVC/assets/weights/jarvis.pth существует)
+  # 0 = без сдвига; отрицательные значения — ниже тон (например -2, -4)
+  rvc_pitch_shift: 0
+
 ai:
   provider: "ollama"
   fallback_provider: "gemini"
