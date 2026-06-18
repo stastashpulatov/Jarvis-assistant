@@ -32,8 +32,7 @@ def run_rvc_inference(input_wav: str, output_wav: str, pitch_shift: int, rvc_dir
             import torch
             import soundfile as sf
             import numpy as np
-            
-    ++ Rest of module
+
             # Now safe to import - Config won't see command-line args
             from configs.config import Config
             from infer.lib.audio import load_audio
