@@ -10,30 +10,13 @@ __pycache__/
 dist/
 build/
 
-# Virtual Environment
-rvc_env/
-.venv/
+# Virtual environments (НЕ храните их в Git)
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
-
-# Data / large files (модели, веса, чекпойнты)
-*.pth
-*.pt
-*.ckpt
-*.safetensors
-*.bin
-dataset_raw/
-voices/
-models/
-
-# Логи и временные файлы
-*.log
-jarvis_notes.txt
-*_silero_out.wav
-*_jarvis_out.wav
+.venv/
 
 # IDE
 .vscode/
@@ -44,3 +27,9 @@ jarvis_notes.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# Логи и временные аудио (если генерируются)
+*.log
+jarvis_notes.txt
+*_silero_out.wav
+*_jarvis_out.wav
