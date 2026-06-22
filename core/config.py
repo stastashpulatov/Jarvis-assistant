@@ -54,6 +54,8 @@ _DEFAULT_CONFIG = {
         "suggestion_interval": 1200,
         "focus_minutes": 50,
         "break_minutes": 10,
+        "cache_enabled": True,
+        "performance_monitoring": False,
     },
 }
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+я#!/usr/bin/env python3
 """
 Simple RVC inference wrapper - avoids argparse conflicts by running in isolated subprocess.
 Usage: python rvc_simple_infer.py <input_wav> <output_wav> <pitch_shift> <rvc_dir>
@@ -26,6 +26,10 @@ if __name__ == "__main__":
         if len(sys.argv) < 5:
             print("ERROR: Usage: rvc_simple_infer.py <input> <output> <pitch> <rvc_dir>")
             sys.exit(1)
+    
+
+
+
     
         input_wav = sys.argv[1]
         output_wav = sys.argv[2]

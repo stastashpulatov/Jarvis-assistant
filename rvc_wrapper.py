@@ -107,6 +107,7 @@ def run_rvc_inference(input_wav: str, output_wav: str, pitch_shift: int, rvc_dir
                 tgt_sr,             # target sample rate
                 0,                  # resample_sr (0 = don't resample)
                 0.25,               # rms_mix_rate
+                version,            # model version ("v1" or "v2")
                 0.33,               # protect
                 None,               # f0_file
             )

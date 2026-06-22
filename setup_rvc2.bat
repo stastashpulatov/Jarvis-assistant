@@ -82,7 +82,7 @@ cd ..\..
 
 echo.
 echo Step 8: Verifying everything loads...
-rvc_env\Scripts\python.exe -c "import torch; import fairseq; import faiss; import pyworld; import parselmouth; print('CUDA:', torch.cuda.is_available()); print('All imports OK')"
+rvc_env\Scripts\python.exe -c "import torch; import fairseq; import faiss; import pyworld; import parselmouth; import tensorboard; import sounddevice; import torchcrepe; print('CUDA:', torch.cuda.is_available()); print('All imports OK')"
 if errorlevel 1 (
     echo SOME IMPORT FAILED - see error above
     pause

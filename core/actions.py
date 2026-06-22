@@ -1,6 +1,7 @@
 """
-Все действия с ПК.
-Умный поиск приложений: словарь известных путей + поиск по реестру + glob по Program Files.
+Все действия с ПК — расширенная версия.
+Новые модули: clipboard, processes, brightness, translate,
+               reminders, youtube_music, currency, file_search, gpu_stats
 """
 import os
 import glob
@@ -9,6 +10,8 @@ import webbrowser
 import datetime
 import time
 import threading
+import json
+import re
 
 try:
     import winreg
@@ -18,10 +21,9 @@ except ImportError:
     _WINREG_AVAILABLE = False
 
 
-# ── Поиск в реестре Windows (самый надёжный способ) ─────────────
+# ── Поиск в реестре Windows ──────────────────────────────────────
 
 def _find_in_registry(app_name: str) -> str | None:
-    """Ищет путь к exe через реестр Windows."""
     if not _WINREG_AVAILABLE:
         return None
     keys_to_check = [
@@ -49,7 +51,6 @@ def _find_in_registry(app_name: str) -> str | None:
 
 
 def _find_by_name_glob(name: str, search_roots: list[str]) -> str | None:
-    """Ищет exe по частичному совпадению имени файла."""
     patterns = [
         name if name.endswith(".exe") else f"{name}.exe",
         f"*{name}*.exe",
@@ -59,7 +60,6 @@ def _find_by_name_glob(name: str, search_roots: list[str]) -> str | None:
             continue
         for pattern in patterns:
             matches = glob.glob(os.path.join(base, "**", pattern), recursive=True)
-            # Предпочитаем exe с точным именем, не служебные
             matches = [m for m in matches if not any(
                 x in os.path.basename(m).lower()
                 for x in ("uninstall", "setup", "update", "helper", "service", "container")
@@ -71,7 +71,6 @@ def _find_by_name_glob(name: str, search_roots: list[str]) -> str | None:
 
 
 def _find_start_menu_shortcut(app_name: str) -> str | None:
-    """Ищет .lnk в меню Пуск и возвращает путь к ярлыку."""
     roots = [
         os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs"),
         os.path.expandvars(r"%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs"),
@@ -88,7 +87,6 @@ def _find_start_menu_shortcut(app_name: str) -> str | None:
 
 
 def _find_by_glob(patterns: list) -> str | None:
-    """Поиск по шаблонам путей."""
     for p in patterns:
         if "*" in p:
             matches = sorted(glob.glob(p))
@@ -100,18 +98,11 @@ def _find_by_glob(patterns: list) -> str | None:
 
 
 def _find_exe(internal_name: str) -> str:
-    """
-    Находит полный путь к exe.
-    Порядок поиска: известные пути → реестр → Program Files glob → shell fallback.
-    """
-
-    # 1. Системные утилиты — всегда в PATH
     SYSTEM = {"notepad", "explorer", "calc", "cmd", "powershell",
                "taskmgr", "mspaint", "control", "regedit", "snippingtool"}
     if internal_name in SYSTEM:
         return internal_name
 
-    # 2. Известные пути
     lappdata = os.path.expandvars("%LOCALAPPDATA%")
     appdata  = os.path.expandvars("%APPDATA%")
     pf       = os.path.expandvars("%PROGRAMFILES%")
@@ -179,31 +170,24 @@ def _find_exe(internal_name: str) -> str:
             f"{pf}\\obs-studio\\bin\\64bit\\obs64.exe",
             f"{pf86}\\obs-studio\\bin\\64bit\\obs64.exe",
         ],
-        # NVIDIA
         "nvidia": [
             f"{pf}\\NVIDIA Corporation\\NVIDIA App\\CEF\\NVIDIA App.exe",
             f"{pf86}\\NVIDIA Corporation\\NVIDIA App\\CEF\\NVIDIA App.exe",
-            f"{pf}\\NVIDIA Corporation\\NVIDIA app\\CEF\\NVIDIA App.exe",
             f"{pf}\\NVIDIA Corporation\\NVIDIA GeForce Experience\\NVIDIA GeForce Experience.exe",
-            f"{pf86}\\NVIDIA Corporation\\NVIDIA GeForce Experience\\NVIDIA GeForce Experience.exe",
         ],
         "geforce": [
             f"{pf}\\NVIDIA Corporation\\NVIDIA GeForce Experience\\NVIDIA GeForce Experience.exe",
             f"{pf86}\\NVIDIA Corporation\\NVIDIA GeForce Experience\\NVIDIA GeForce Experience.exe",
         ],
-        # Epic Games
         "epicgames": [
             f"{pf}\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe",
             f"{pf86}\\Epic Games\\Launcher\\Portal\\Binaries\\Win32\\EpicGamesLauncher.exe",
-            f"{pf}\\Epic Games\\Launcher\\Portal\\Binaries\\Win32\\EpicGamesLauncher.exe",
             f"{lappdata}\\EpicGamesLauncher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe",
         ],
-        # Battle.net
         "battle.net": [
             f"{pf86}\\Battle.net\\Battle.net Launcher.exe",
             f"{pf}\\Battle.net\\Battle.net Launcher.exe",
         ],
-        # EA App / Origin
         "origin": [
             f"{pf86}\\Origin\\Origin.exe",
             f"{pf}\\Origin\\Origin.exe",
@@ -213,7 +197,6 @@ def _find_exe(internal_name: str) -> str:
             f"{pf86}\\Ubisoft\\Ubisoft Game Launcher\\UbisoftConnect.exe",
             f"{pf}\\Ubisoft\\Ubisoft Game Launcher\\UbisoftConnect.exe",
         ],
-        # Printers
         "itunes": [
             f"{pf}\\iTunes\\iTunes.exe",
             f"{pf86}\\iTunes\\iTunes.exe",
@@ -229,30 +212,31 @@ def _find_exe(internal_name: str) -> str:
             f"{lappdata}\\Figma\\Figma.exe",
             f"{appdata}\\Figma\\Figma.exe",
         ],
+        "mpv": [
+            f"{pf}\\mpv\\mpv.exe",
+            f"{pf86}\\mpv\\mpv.exe",
+            os.path.join(os.path.expanduser("~"), "mpv", "mpv.exe"),
+            "C:\\mpv\\mpv.exe",
+        ],
     }
 
-    # 3. Проверяем известные пути
     found = _find_by_glob(KNOWN.get(internal_name, []))
     if found:
         return found
 
-    # 4. Ищем в реестре
     reg = _find_in_registry(internal_name)
     if reg:
         return reg
 
-    # 5. Fuzzy-поиск по имени (NVIDIA App.exe и т.п.)
     search_roots = [pf, pf86, lappdata, appdata]
     fuzzy = _find_by_name_glob(internal_name, search_roots)
     if fuzzy:
         return fuzzy
 
-    # 6. Ярлык в меню Пуск
     lnk = _find_start_menu_shortcut(internal_name)
     if lnk:
         return lnk
 
-    # 7. Glob по всему Program Files (точное имя)
     exe = internal_name if internal_name.endswith(".exe") else internal_name + ".exe"
     for base in search_roots:
         matches = glob.glob(f"{base}\\**\\{exe}", recursive=True)
@@ -265,108 +249,42 @@ def _find_exe(internal_name: str) -> str:
 # ── Словарь алиасов ──────────────────────────────────────────────
 
 APP_ALIASES: dict[str, str] = {
-    # Браузеры
-    "chrome":               "chrome",
-    "google chrome":        "chrome",
-    "хром":                 "chrome",
-    "гугл хром":            "chrome",
-    "гугл":                 "chrome",
-    "edge":                 "msedge",
-    "msedge":               "msedge",
-    "microsoft edge":       "msedge",
-    "эдж":                  "msedge",
-    "майкрософт эдж":       "msedge",
-    "firefox":              "firefox",
-    "файрфокс":             "firefox",
-    # Системные
-    "notepad":              "notepad",
-    "блокнот":              "notepad",
-    "ноутбук":              "notepad",   # частая ошибка распознавания
-    "explorer":             "explorer",
-    "проводник":            "explorer",
-    "файловый менеджер":    "explorer",
-    "calc":                 "calc",
-    "калькулятор":          "calc",
-    "cmd":                  "cmd",
-    "командная строка":     "cmd",
-    "консоль":              "cmd",
-    "powershell":           "powershell",
-    "taskmgr":              "taskmgr",
-    "диспетчер задач":      "taskmgr",
-    "диспетчер":            "taskmgr",
-    "mspaint":              "mspaint",
-    "paint":                "mspaint",
-    "паинт":                "mspaint",
-    "рисование":            "mspaint",
-    # Office
-    "word":                 "winword",
-    "ворд":                 "winword",
-    "microsoft word":       "winword",
-    "excel":                "excel",
-    "эксель":               "excel",
-    "microsoft excel":      "excel",
-    "powerpoint":           "powerpnt",
-    "поверпойнт":           "powerpnt",
-    "презентация":          "powerpnt",
-    # Мессенджеры / соцсети
-    "telegram":             "telegram",
-    "телеграм":             "telegram",
-    "discord":              "discord",
-    "дискорд":              "discord",
-    "zoom":                 "zoom",
-    "зум":                  "zoom",
-    "skype":                "skype",
-    "скайп":                "skype",
-    "slack":                "slack",
-    "слак":                 "slack",
-    # Медиа
-    "spotify":              "spotify",
-    "спотифай":             "spotify",
-    "музыка":               "spotify",
-    "vlc":                  "vlc",
-    "itunes":               "itunes",
-    "айтюнс":               "itunes",
-    # Игровые платформы
-    "steam":                "steam",
-    "стим":                 "steam",
-    "epicgames":            "epicgames",
-    "epic games":           "epicgames",
-    "epic":                 "epicgames",
-    "эпик геймс":           "epicgames",
-    "эпик":                 "epicgames",
-    "battle.net":           "battle.net",
-    "battlenet":            "battle.net",
-    "баттлнет":             "battle.net",
-    "origin":               "origin",
-    "ориджин":              "origin",
-    "ea":                   "origin",
-    "uplay":                "uplay",
-    "ubisoft":              "uplay",
-    "убисофт":              "uplay",
-    # NVIDIA
-    "nvidia":               "nvidia",
-    "нвидиа":               "nvidia",
-    "nvidia app":           "nvidia",
-    "geforce":              "geforce",
-    "geforce experience":   "geforce",
-    "джифорс":              "geforce",
-    # Dev
-    "vscode":               "vscode",
-    "vs code":              "vscode",
-    "visual studio code":   "vscode",
-    "вс код":               "vscode",
-    "код":                  "vscode",
-    # Другое
-    "obs":                  "obs",
-    "utorrent":             "utorrent",
-    "торрент":              "utorrent",
-    "figma":                "figma",
-    "фигма":                "figma",
+    "chrome": "chrome", "google chrome": "chrome", "хром": "chrome", "гугл хром": "chrome",
+    "edge": "msedge", "msedge": "msedge", "microsoft edge": "msedge", "эдж": "msedge",
+    "firefox": "firefox", "файрфокс": "firefox",
+    "notepad": "notepad", "блокнот": "notepad", "ноутбук": "notepad",
+    "explorer": "explorer", "проводник": "explorer", "файловый менеджер": "explorer",
+    "calc": "calc", "калькулятор": "calc",
+    "cmd": "cmd", "командная строка": "cmd", "консоль": "cmd",
+    "powershell": "powershell",
+    "taskmgr": "taskmgr", "диспетчер задач": "taskmgr", "диспетчер": "taskmgr",
+    "mspaint": "mspaint", "paint": "mspaint", "паинт": "mspaint", "рисование": "mspaint",
+    "word": "winword", "ворд": "winword", "microsoft word": "winword",
+    "excel": "excel", "эксель": "excel", "microsoft excel": "excel",
+    "powerpoint": "powerpnt", "поверпойнт": "powerpnt", "презентация": "powerpnt",
+    "telegram": "telegram", "телеграм": "telegram",
+    "discord": "discord", "дискорд": "discord",
+    "zoom": "zoom", "зум": "zoom",
+    "skype": "skype", "скайп": "skype",
+    "slack": "slack", "слак": "slack",
+    "spotify": "spotify", "спотифай": "spotify", "музыка": "spotify",
+    "vlc": "vlc",
+    "itunes": "itunes", "айтюнс": "itunes",
+    "steam": "steam", "стим": "steam",
+    "epicgames": "epicgames", "epic games": "epicgames", "epic": "epicgames", "эпик": "epicgames",
+    "battle.net": "battle.net", "battlenet": "battle.net", "баттлнет": "battle.net",
+    "origin": "origin", "ориджин": "origin", "ea": "origin",
+    "uplay": "uplay", "ubisoft": "uplay", "убисофт": "uplay",
+    "nvidia": "nvidia", "нвидиа": "nvidia",
+    "geforce": "geforce", "geforce experience": "geforce", "джифорс": "geforce",
+    "vscode": "vscode", "vs code": "vscode", "visual studio code": "vscode", "код": "vscode",
+    "obs": "obs",
+    "utorrent": "utorrent", "торрент": "utorrent",
+    "figma": "figma", "фигма": "figma",
 }
 
 
 def _get_browser_exe(browser: str | None) -> str | None:
-    """Возвращает путь к exe браузера или None для системного по умолчанию."""
     if not browser:
         return None
     internal = APP_ALIASES.get(browser.lower(), browser.lower())
@@ -377,7 +295,6 @@ def _get_browser_exe(browser: str | None) -> str | None:
 
 
 def _launch(exe: str) -> None:
-    """Запускает exe, .lnk или системную команду."""
     if exe.lower().endswith(".lnk"):
         os.startfile(exe)
         return
@@ -395,58 +312,47 @@ def open_app(target: str, log) -> str:
     internal = APP_ALIASES.get(target.lower(), target.lower())
     exe      = _find_exe(internal)
     log.info("CMD", f"Открываю: {target!r} -> {internal!r} -> {exe!r}")
-
     try:
         if internal == "discord":
             upd = os.path.expandvars(r"%LOCALAPPDATA%\Discord\Update.exe")
             if os.path.exists(upd):
                 subprocess.Popen([upd, "--processStart", "Discord.exe"])
                 return ""
-
         if not exe:
             return f"Сэр, не удалось найти {target}. Возможно, приложение не установлено."
-
         _launch(exe)
         return ""
     except Exception as e:
         log.error("CMD", f"Не могу запустить '{exe}': {e}")
-        return f"Сэр, не удалось запустить {target}. Возможно, приложение не установлено."
+        return f"Сэр, не удалось запустить {target}."
 
 
 def open_url(url: str, log, browser: str | None = None) -> str:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-
     browser_exe = _get_browser_exe(browser)
     if browser_exe:
         subprocess.Popen([browser_exe, url])
     else:
         webbrowser.open(url)
-
-    log.info("CMD", f"URL: {url}" + (f" ({browser})" if browser else ""))
+    log.info("CMD", f"URL: {url}")
     return ""
 
 
 def open_urls(urls: list, browser: str | None, log) -> str:
-    """Открывает несколько вкладок в указанном браузере."""
     if not urls:
         return "Сэр, не указаны адреса для открытия."
-
     normalized = []
     for u in urls:
         if not u.startswith(("http://", "https://")):
             u = "https://" + u
         normalized.append(u)
-
     browser_exe = _get_browser_exe(browser) or _get_browser_exe("msedge")
     if browser_exe:
         subprocess.Popen([browser_exe] + normalized)
-        log.info("CMD", f"Вкладки ({len(normalized)}): {normalized} -> {browser_exe}")
         return ""
-
     for u in normalized:
         webbrowser.open(u)
-    log.info("CMD", f"Вкладки ({len(normalized)}): {normalized}")
     return ""
 
 
@@ -469,9 +375,8 @@ def get_system_info(log) -> str:
             f"{ram.used//1024**3} из {ram.total//1024**3} гигабайт. "
             f"Диск: {disk.free//1024**3} гигабайт свободно."
         )
-        log.info("CMD", f"CPU {cpu:.0f}%  RAM {ram.percent:.0f}%  Disk {disk.free//1024**3}GB free")
         return msg
-    except Exception as e:
+    except Exception:
         return "Не удалось получить данные системы, сэр."
 
 
@@ -500,7 +405,7 @@ def take_screenshot(log) -> str:
             log.info("CMD", f"Скриншот: {fname}")
             return "Скриншот сохранён на рабочем столе, сэр."
         return "Не удалось сделать скриншот, сэр."
-    except Exception as e:
+    except Exception:
         return "Ошибка при создании скриншота, сэр."
 
 
@@ -515,7 +420,6 @@ def _media_key(vk: int):
 
 
 def _get_endpoint_volume():
-    """Возвращает интерфейс громкости Windows или None."""
     try:
         from pycaw.pycaw import AudioUtilities
         device = AudioUtilities.GetSpeakers()
@@ -532,23 +436,20 @@ def get_volume_level(log) -> str:
     muted = vol.GetMute()
     if muted:
         return f"Звук выключен, сэр. Уровень был {level} процентов."
-    log.info("CMD", f"Volume level: {level}%")
     return f"Текущая громкость {level} процентов, сэр."
 
 
 def volume_set(level: int, log) -> str:
     vol = _get_endpoint_volume()
     if not vol:
-        return "Сэр, не удалось изменить громкость. Установите pycaw: pip install pycaw"
+        return "Сэр, не удалось изменить громкость."
     level = max(0, min(100, int(level)))
     try:
         vol.SetMute(0, None)
         vol.SetMasterVolumeLevelScalar(level / 100.0, None)
         actual = int(round(vol.GetMasterVolumeLevelScalar() * 100))
-        log.info("CMD", f"Volume set: {actual}%")
         return f"Громкость установлена на {actual} процентов, сэр."
-    except Exception as e:
-        log.error("CMD", f"Volume set failed: {e}")
+    except Exception:
         return "Сэр, не удалось изменить громкость."
 
 
@@ -576,6 +477,7 @@ def media_previous(log) -> str:
     _media_key(0xB1)
     return "Предыдущий трек, сэр."
 
+
 def open_folder(name: str, log) -> str:
     folders = {
         "desktop": os.path.join(os.path.expanduser("~"), "Desktop"),
@@ -597,8 +499,8 @@ def open_folder(name: str, log) -> str:
     if not os.path.exists(folder):
         return f"Сэр, папка {name} не найдена."
     os.startfile(folder)
-    log.info("CMD", f"Folder: {folder}")
     return ""
+
 
 def create_note(text: str, log) -> str:
     text = text.strip()
@@ -612,6 +514,7 @@ def create_note(text: str, log) -> str:
         f.write(f"[{stamp}] {text}\n")
     log.info("CMD", f"Note: {path}")
     return "Записал заметку на рабочий стол, сэр."
+
 
 def start_timer(seconds: int, message: str, log, tts) -> str:
     seconds = max(1, min(int(seconds), 24 * 60 * 60))
@@ -629,6 +532,7 @@ def start_timer(seconds: int, message: str, log, tts) -> str:
         return f"Таймер на {minutes} минут запущен, сэр."
     return f"Таймер на {seconds} секунд запущен, сэр."
 
+
 def close_app(target: str, log) -> str:
     internal = APP_ALIASES.get(target.lower(), target.lower())
     exe = internal if internal.endswith(".exe") else internal + ".exe"
@@ -637,6 +541,7 @@ def close_app(target: str, log) -> str:
     if r.returncode == 0:
         return f"Закрыл {target}, сэр."
     return f"Не нашёл запущенный процесс {target}, сэр."
+
 
 def shutdown(log) -> str:
     subprocess.run("shutdown /s /t 3", shell=True)
@@ -651,10 +556,7 @@ def lock(log) -> str:
     return "Блокирую компьютер, сэр."
 
 
-# ── Iron Man: расширенные возможности ───────────────────────────
-
 def show_desktop(log) -> str:
-    """Win+D — показать рабочий стол."""
     try:
         import ctypes
         VK_LWIN, VK_D, KEYEVENTF_KEYUP = 0x5B, 0x44, 0x0002
@@ -664,10 +566,8 @@ def show_desktop(log) -> str:
         time.sleep(0.05)
         ctypes.windll.user32.keybd_event(VK_D, 0, KEYEVENTF_KEYUP, 0)
         ctypes.windll.user32.keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0)
-        log.info("CMD", "Show desktop")
         return "Рабочий стол, сэр."
     except Exception as e:
-        log.error("CMD", f"Show desktop: {e}")
         return "Не удалось свернуть окна, сэр."
 
 
@@ -685,7 +585,6 @@ def get_battery(log) -> str:
             extra = f", примерно {hrs} ч {mins} мин до разряда"
         else:
             extra = ", зарядка активна" if bat.power_plugged else ""
-        log.info("CMD", f"Battery {pct}% ({plugged})")
         return f"Заряд батареи {pct} процентов, работа {plugged}{extra}, сэр."
     except Exception:
         return "Не удалось получить данные батареи, сэр."
@@ -703,7 +602,6 @@ def get_weather(city: str, log) -> str:
         feel = cur["FeelsLikeC"]
         desc = cur.get("lang_ru", [{}])[0].get("value") or cur["weatherDesc"][0]["value"]
         hum = cur["humidity"]
-        log.info("CMD", f"Weather {city}: {temp}C")
         return (
             f"Погода в {city}, сэр: {desc}, {temp} градусов, "
             f"ощущается как {feel}. Влажность {hum} процентов."
@@ -714,7 +612,6 @@ def get_weather(city: str, log) -> str:
 
 
 def run_diagnostics(log) -> str:
-    """Полная диагностика — как в фильме."""
     parts = ["Диагностика завершена, сэр."]
     try:
         import psutil
@@ -723,7 +620,6 @@ def run_diagnostics(log) -> str:
         disk = psutil.disk_usage("C:\\" if os.path.exists("C:\\") else "/")
         boot = datetime.datetime.now() - datetime.datetime.fromtimestamp(psutil.boot_time())
         uptime_h = int(boot.total_seconds() // 3600)
-
         parts.append(f"Процессор: {cpu:.0f} процентов.")
         parts.append(
             f"Память: {ram.percent:.0f} процентов, "
@@ -731,37 +627,589 @@ def run_diagnostics(log) -> str:
         )
         parts.append(f"Диск C: {disk.free // 1024**3} гигабайт свободно.")
         parts.append(f"Аптайм системы: {uptime_h} часов.")
-
         bat = psutil.sensors_battery()
         if bat:
             parts.append(f"Батарея: {int(bat.percent)} процентов.")
-
         vol = _get_endpoint_volume()
         if vol:
             lvl = int(round(vol.GetMasterVolumeLevelScalar() * 100))
             parts.append(f"Громкость: {lvl} процентов.")
-
-        log.info("CMD", f"Diagnostics OK — CPU {cpu:.0f}% RAM {ram.percent:.0f}%")
     except Exception as e:
         log.error("CMD", f"Diagnostics: {e}")
         parts.append("Часть данных недоступна.")
-
     return " ".join(parts)
 
 
 def empty_recycle_bin(log) -> str:
     try:
         import ctypes
-        from ctypes import wintypes
         SHERB_NOCONFIRMATION = 0x00000001
         SHERB_NOPROGRESSUI   = 0x00000002
         SHERB_NOSOUND        = 0x00000004
         flags = SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND
         res = ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, flags)
         if res == 0:
-            log.info("CMD", "Recycle bin emptied")
             return "Корзина очищена, сэр."
         return "Не удалось очистить корзину, сэр."
     except Exception as e:
-        log.error("CMD", f"Recycle bin: {e}")
         return "Ошибка при очистке корзины, сэр."
+
+
+# ══════════════════════════════════════════════════════════════════
+#  НОВЫЕ ФУНКЦИИ
+# ══════════════════════════════════════════════════════════════════
+
+# ── 1. Буфер обмена ──────────────────────────────────────────────
+
+def clipboard_read(log) -> str:
+    """Зачитывает содержимое буфера обмена."""
+    try:
+        import pyperclip
+        text = pyperclip.paste()
+        if not text or not text.strip():
+            return "Буфер обмена пуст, сэр."
+        # Обрезаем если слишком длинный
+        if len(text) > 300:
+            short = text[:300].strip()
+            return f"В буфере обмена, сэр: {short}... и ещё {len(text)-300} символов."
+        return f"В буфере обмена, сэр: {text.strip()}"
+    except Exception as e:
+        log.error("CMD", f"Clipboard read: {e}")
+        return "Не удалось прочитать буфер обмена, сэр."
+
+
+def clipboard_copy(text: str, log) -> str:
+    """Копирует текст в буфер обмена."""
+    try:
+        import pyperclip
+        pyperclip.copy(text)
+        log.info("CMD", f"Clipboard: скопировано {len(text)} символов")
+        return f"Скопировал в буфер обмена, сэр."
+    except Exception as e:
+        log.error("CMD", f"Clipboard copy: {e}")
+        return "Не удалось скопировать в буфер обмена, сэр."
+
+
+def clipboard_clear(log) -> str:
+    """Очищает буфер обмена."""
+    try:
+        import pyperclip
+        pyperclip.copy("")
+        return "Буфер обмена очищен, сэр."
+    except Exception as e:
+        return "Не удалось очистить буфер обмена, сэр."
+
+
+# ── 2. Управление процессами ──────────────────────────────────────
+
+def get_top_processes(log) -> str:
+    """Возвращает топ-5 процессов по потреблению памяти."""
+    try:
+        import psutil
+        procs = []
+        for p in psutil.process_iter(["name", "memory_percent", "cpu_percent"]):
+            try:
+                info = p.info
+                if info["memory_percent"] and info["memory_percent"] > 0.1:
+                    procs.append(info)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        procs.sort(key=lambda x: x["memory_percent"] or 0, reverse=True)
+        top = procs[:5]
+        if not top:
+            return "Сэр, процессы не найдены."
+
+        parts = ["Топ процессов по памяти, сэр:"]
+        for p in top:
+            name = p["name"] or "unknown"
+            mem  = round(p["memory_percent"] or 0, 1)
+            parts.append(f"{name}: {mem} процентов памяти")
+        return ". ".join(parts) + "."
+    except Exception as e:
+        log.error("CMD", f"Top processes: {e}")
+        return "Не удалось получить список процессов, сэр."
+
+
+def kill_process(name: str, log) -> str:
+    """Завершает процесс по имени."""
+    try:
+        import psutil
+        killed = []
+        exe_name = name if name.endswith(".exe") else name + ".exe"
+        for p in psutil.process_iter(["name", "pid"]):
+            try:
+                if p.info["name"] and p.info["name"].lower() == exe_name.lower():
+                    p.kill()
+                    killed.append(p.info["name"])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        if killed:
+            log.info("CMD", f"Killed: {killed}")
+            return f"Завершил процесс {name}, сэр."
+        return f"Процесс {name} не найден среди запущенных, сэр."
+    except Exception as e:
+        log.error("CMD", f"Kill process: {e}")
+        return f"Не удалось завершить {name}, сэр."
+
+
+# ── 3. Яркость экрана ────────────────────────────────────────────
+
+def brightness_set(level: int, log) -> str:
+    """Устанавливает яркость экрана (0–100)."""
+    level = max(0, min(100, int(level)))
+    try:
+        import screen_brightness_control as sbc
+        sbc.set_brightness(level)
+        log.info("CMD", f"Brightness set: {level}%")
+        return f"Яркость установлена на {level} процентов, сэр."
+    except Exception as e:
+        # Fallback через WMI
+        try:
+            subprocess.run(
+                ["powershell", "-Command",
+                 f"(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{level})"],
+                capture_output=True, timeout=5
+            )
+            return f"Яркость установлена на {level} процентов, сэр."
+        except Exception:
+            log.error("CMD", f"Brightness: {e}")
+            return "Не удалось изменить яркость, сэр. Возможно, монитор подключён через HDMI."
+
+
+def brightness_get(log) -> str:
+    """Возвращает текущую яркость."""
+    try:
+        import screen_brightness_control as sbc
+        level = sbc.get_brightness()
+        if isinstance(level, list):
+            level = level[0]
+        return f"Текущая яркость {level} процентов, сэр."
+    except Exception:
+        return "Не удалось определить текущую яркость, сэр."
+
+
+def brightness_up(log) -> str:
+    try:
+        import screen_brightness_control as sbc
+        cur = sbc.get_brightness()
+        cur = cur[0] if isinstance(cur, list) else cur
+        new = min(100, cur + 10)
+        sbc.set_brightness(new)
+        return f"Яркость повышена до {new} процентов, сэр."
+    except Exception:
+        return "Не удалось повысить яркость, сэр."
+
+
+def brightness_down(log) -> str:
+    try:
+        import screen_brightness_control as sbc
+        cur = sbc.get_brightness()
+        cur = cur[0] if isinstance(cur, list) else cur
+        new = max(0, cur - 10)
+        sbc.set_brightness(new)
+        return f"Яркость снижена до {new} процентов, сэр."
+    except Exception:
+        return "Не удалось снизить яркость, сэр."
+
+
+# ── 4. Перевод текста ─────────────────────────────────────────────
+
+LANG_MAP = {
+    "английский": "en", "английском": "en", "english": "en", "en": "en",
+    "русский": "ru", "русском": "ru", "russian": "ru", "ru": "ru",
+    "немецкий": "de", "немецком": "de", "german": "de", "de": "de",
+    "французский": "fr", "французском": "fr", "french": "fr", "fr": "fr",
+    "испанский": "es", "испанском": "es", "spanish": "es", "es": "es",
+    "китайский": "zh-CN", "китайском": "zh-CN", "chinese": "zh-CN",
+    "японский": "ja", "японском": "ja", "japanese": "ja", "ja": "ja",
+    "итальянский": "it", "итальянском": "it", "italian": "it",
+    "турецкий": "tr", "турецком": "tr", "turkish": "tr",
+    "арабский": "ar", "арабском": "ar", "arabic": "ar",
+    "узбекский": "uz", "узбекском": "uz", "uzbek": "uz",
+}
+
+def translate_text(text: str, target_lang: str, log) -> str:
+    """Переводит текст на указанный язык."""
+    try:
+        lang_code = LANG_MAP.get(target_lang.lower(), target_lang)
+        from deep_translator import GoogleTranslator
+        translator = GoogleTranslator(source="auto", target=lang_code)
+        result = translator.translate(text)
+        log.info("CMD", f"Translate -> {lang_code}: {text[:50]}")
+        return f"Перевод, сэр: {result}"
+    except Exception as e:
+        log.error("CMD", f"Translate error: {e}")
+        return f"Не удалось перевести текст, сэр."
+
+
+# ── 5. Умные напоминания ──────────────────────────────────────────
+
+_REMINDERS_FILE = os.path.join(os.path.expanduser("~"), ".jarvis_reminders.json")
+_reminders: list[dict] = []
+_reminder_thread_started = False
+
+
+def _load_reminders():
+    global _reminders
+    try:
+        if os.path.exists(_REMINDERS_FILE):
+            with open(_REMINDERS_FILE, "r", encoding="utf-8") as f:
+                _reminders = json.load(f)
+    except Exception:
+        _reminders = []
+
+
+def _save_reminders():
+    try:
+        with open(_REMINDERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(_reminders, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _reminder_loop(tts, log):
+    """Фоновый поток: проверяет напоминания каждые 30 секунд."""
+    _load_reminders()
+    while True:
+        time.sleep(30)
+        now = datetime.datetime.now()
+        fired = []
+        for r in _reminders:
+            try:
+                t = datetime.datetime.fromisoformat(r["time"])
+                if t <= now and not r.get("done"):
+                    r["done"] = True
+                    fired.append(r["message"])
+            except Exception:
+                pass
+        if fired:
+            _save_reminders()
+            for msg in fired:
+                log.info("CMD", f"Reminder: {msg}")
+                tts.speak(f"Сэр, напоминание: {msg}.")
+        # Удаляем старые выполненные
+        _reminders[:] = [r for r in _reminders if not r.get("done") or
+                          (datetime.datetime.fromisoformat(r["time"]) >
+                           datetime.datetime.now() - datetime.timedelta(hours=1))]
+
+
+def start_reminder_thread(tts, log):
+    """Запускает фоновый поток напоминаний. Вызывать один раз при старте."""
+    global _reminder_thread_started
+    if _reminder_thread_started:
+        return
+    _reminder_thread_started = True
+    t = threading.Thread(target=_reminder_loop, args=(tts, log), daemon=True)
+    t.start()
+    log.info("CMD", "Поток напоминаний запущен")
+
+
+def add_reminder(message: str, when_str: str, log) -> str:
+    """
+    Добавляет напоминание. when_str — строка типа '18:30', 'через 30 минут', '15:00'.
+    """
+    _load_reminders()
+    now = datetime.datetime.now()
+    target_dt = None
+
+    # Формат HH:MM
+    m = re.match(r"^(\d{1,2}):(\d{2})$", when_str.strip())
+    if m:
+        h, mn = int(m.group(1)), int(m.group(2))
+        target_dt = now.replace(hour=h, minute=mn, second=0, microsecond=0)
+        if target_dt <= now:
+            target_dt += datetime.timedelta(days=1)
+
+    # Через N минут/часов
+    if not target_dt:
+        m = re.search(r"через\s+(\d+)\s*(минут|час|секунд)", when_str)
+        if m:
+            val = int(m.group(1))
+            unit = m.group(2)
+            if unit.startswith("минут"):
+                target_dt = now + datetime.timedelta(minutes=val)
+            elif unit.startswith("час"):
+                target_dt = now + datetime.timedelta(hours=val)
+            else:
+                target_dt = now + datetime.timedelta(seconds=val)
+
+    if not target_dt:
+        return "Сэр, не понял время напоминания. Попробуйте: «в 18:30» или «через 30 минут»."
+
+    entry = {
+        "message": message,
+        "time": target_dt.isoformat(),
+        "done": False,
+    }
+    _reminders.append(entry)
+    _save_reminders()
+
+    time_str = target_dt.strftime("%H:%M")
+    log.info("CMD", f"Reminder added: {message} at {time_str}")
+    return f"Напоминание установлено на {time_str}, сэр."
+
+
+def list_reminders(log) -> str:
+    """Озвучивает список активных напоминаний."""
+    _load_reminders()
+    active = [r for r in _reminders if not r.get("done")]
+    if not active:
+        return "Активных напоминаний нет, сэр."
+    parts = [f"У вас {len(active)} напоминаний, сэр:"]
+    for r in active[:5]:
+        try:
+            t = datetime.datetime.fromisoformat(r["time"]).strftime("%H:%M")
+            parts.append(f"в {t}: {r['message']}")
+        except Exception:
+            pass
+    return ". ".join(parts) + "."
+
+
+def clear_reminders(log) -> str:
+    global _reminders
+    _reminders = []
+    _save_reminders()
+    return "Все напоминания удалены, сэр."
+
+
+# ── 6. Воспроизведение музыки с YouTube ──────────────────────────
+
+_yt_process = None  # текущий процесс плеера
+
+
+def play_youtube(query: str, log) -> str:
+    """Ищет трек на YouTube и воспроизводит через VLC или mpv."""
+    global _yt_process
+
+    # Останавливаем предыдущий
+    if _yt_process and _yt_process.poll() is None:
+        _yt_process.terminate()
+        _yt_process = None
+
+    # Ищем плеер
+    vlc_path = _find_exe("vlc")
+    mpv_path  = _find_exe("mpv")
+    player = vlc_path if vlc_path else (mpv_path if mpv_path else None)
+
+    if not player:
+        # Открываем поиск в браузере как fallback
+        url = "https://www.youtube.com/results?search_query=" + query.replace(" ", "+")
+        webbrowser.open(url)
+        return f"Сэр, плеер VLC или mpv не найден. Открываю поиск в браузере."
+
+    def _play():
+        global _yt_process
+        try:
+            import yt_dlp
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "default_search": "ytsearch1",
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+                if not info or not info.get("entries"):
+                    log.warn("CMD", "YouTube: ничего не найдено")
+                    return
+                entry = info["entries"][0]
+                url = entry.get("url") or entry.get("webpage_url")
+                title = entry.get("title", "трек")
+                log.info("CMD", f"YouTube: {title}")
+
+                if "vlc" in player.lower():
+                    cmd = [player, "--intf", "dummy", url]
+                else:  # mpv
+                    cmd = [player, "--no-video", url]
+                _yt_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            log.error("CMD", f"YouTube play: {e}")
+
+    threading.Thread(target=_play, daemon=True).start()
+    return f"Ищу и воспроизвожу «{query}», сэр."
+
+
+def stop_music(log) -> str:
+    global _yt_process
+    if _yt_process and _yt_process.poll() is None:
+        _yt_process.terminate()
+        _yt_process = None
+        return "Музыка остановлена, сэр."
+    _media_key(0xB2)  # media stop key
+    return "Останавливаю воспроизведение, сэр."
+
+
+# ── 7. Конвертация валют ──────────────────────────────────────────
+
+CURRENCY_NAMES = {
+    "доллар": "USD", "доллары": "USD", "долларов": "USD", "usd": "USD", "$": "USD",
+    "евро": "EUR", "eur": "EUR",
+    "рубль": "RUB", "рубли": "RUB", "рублей": "RUB", "руб": "RUB", "rub": "RUB",
+    "сум": "UZS", "сумов": "UZS", "uzs": "UZS",
+    "фунт": "GBP", "gbp": "GBP",
+    "юань": "CNY", "cny": "CNY",
+    "иена": "JPY", "jpy": "JPY",
+    "тенге": "KZT", "kzt": "KZT",
+    "биткоин": "BTC", "btc": "BTC",
+}
+
+def convert_currency(amount: float, from_cur: str, to_cur: str, log) -> str:
+    """Конвертирует валюту через открытый API."""
+    try:
+        import requests
+        from_code = CURRENCY_NAMES.get(from_cur.lower(), from_cur.upper())
+        to_code   = CURRENCY_NAMES.get(to_cur.lower(), to_cur.upper())
+        url = f"https://api.exchangerate.host/convert?from={from_code}&to={to_code}&amount={amount}"
+        r = requests.get(url, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        result = data.get("result")
+        if result is None:
+            raise ValueError("Нет данных")
+        log.info("CMD", f"Currency: {amount} {from_code} = {result:.2f} {to_code}")
+        return f"Сэр, {amount:.0f} {from_code} — это {result:.2f} {to_code}."
+    except Exception as e:
+        log.error("CMD", f"Currency: {e}")
+        return "Сэр, не удалось получить курс валют."
+
+
+# ── 8. Поиск файлов ───────────────────────────────────────────────
+
+def find_file(name: str, log) -> str:
+    """Ищет файл по имени в домашней папке и открывает его."""
+    home = os.path.expanduser("~")
+    search_dirs = [
+        os.path.join(home, "Desktop"),
+        os.path.join(home, "Documents"),
+        os.path.join(home, "Downloads"),
+        home,
+    ]
+    found = []
+    for d in search_dirs:
+        if not os.path.isdir(d):
+            continue
+        for root, dirs, files in os.walk(d):
+            # Пропускаем скрытые и системные папки
+            dirs[:] = [dd for dd in dirs if not dd.startswith(".") and dd not in ("AppData",)]
+            for f in files:
+                if name.lower() in f.lower():
+                    found.append(os.path.join(root, f))
+                    if len(found) >= 5:
+                        break
+            if len(found) >= 5:
+                break
+    if not found:
+        return f"Сэр, файл «{name}» не найден."
+    if len(found) == 1:
+        os.startfile(found[0])
+        log.info("CMD", f"File opened: {found[0]}")
+        return f"Открываю файл, сэр: {os.path.basename(found[0])}."
+    names = ", ".join(os.path.basename(p) for p in found[:3])
+    return f"Сэр, найдено {len(found)} файлов: {names}. Уточните запрос."
+
+
+# ── 9. Статистика GPU ─────────────────────────────────────────────
+
+def get_gpu_stats(log) -> str:
+    """Возвращает статистику GPU через nvidia-smi."""
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            line = r.stdout.strip().split("\n")[0]
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 5:
+                name, temp, util, mem_used, mem_total = parts
+                log.info("CMD", f"GPU: {name}, {temp}C, {util}%, {mem_used}/{mem_total}MB")
+                return (
+                    f"Видеокарта {name}, сэр. "
+                    f"Температура {temp} градусов, нагрузка {util} процентов. "
+                    f"Видеопамять: {mem_used} из {mem_total} мегабайт."
+                )
+        return "Данные GPU недоступны, сэр."
+    except FileNotFoundError:
+        return "Сэр, nvidia-smi не найден. Возможно, драйверы не установлены."
+    except Exception as e:
+        log.error("CMD", f"GPU stats: {e}")
+        return "Не удалось получить данные видеокарты, сэр."
+
+
+# ── 10. Управление окнами ─────────────────────────────────────────
+
+def maximize_window(log) -> str:
+    """Разворачивает активное окно."""
+    try:
+        import ctypes
+        SW_MAXIMIZE = 3
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        return "Разворачиваю окно, сэр."
+    except Exception:
+        return "Не удалось развернуть окно, сэр."
+
+
+def minimize_window(log) -> str:
+    """Сворачивает активное окно."""
+    try:
+        import ctypes
+        SW_MINIMIZE = 6
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
+        return "Сворачиваю окно, сэр."
+    except Exception:
+        return "Не удалось свернуть окно, сэр."
+
+
+def switch_window(log) -> str:
+    """Alt+Tab — переключение окон."""
+    try:
+        import ctypes
+        VK_ALT, VK_TAB = 0x12, 0x09
+        ctypes.windll.user32.keybd_event(VK_ALT, 0, 0, 0)
+        time.sleep(0.05)
+        ctypes.windll.user32.keybd_event(VK_TAB, 0, 0, 0)
+        time.sleep(0.05)
+        ctypes.windll.user32.keybd_event(VK_TAB, 0, 2, 0)
+        time.sleep(0.05)
+        ctypes.windll.user32.keybd_event(VK_ALT, 0, 2, 0)
+        return "Переключаю окно, сэр."
+    except Exception:
+        return "Не удалось переключить окно, сэр."
+
+
+# ── 11. Новости ───────────────────────────────────────────────────
+
+def get_news(topic: str, log) -> str:
+    """Получает заголовки новостей через RSS."""
+    try:
+        import requests
+        from xml.etree import ElementTree as ET
+
+        feeds = {
+            "": "https://lenta.ru/rss/articles",
+            "мир": "https://lenta.ru/rss/news/world",
+            "технологии": "https://lenta.ru/rss/news/science",
+            "спорт": "https://lenta.ru/rss/news/sport",
+            "россия": "https://lenta.ru/rss/news/russia",
+        }
+        url = feeds.get(topic.lower().strip(), feeds[""])
+        r = requests.get(url, timeout=6, headers={"User-Agent": "JARVIS/1.0"})
+        root = ET.fromstring(r.text)
+        items = root.findall(".//item")[:4]
+        if not items:
+            return "Сэр, новости недоступны."
+        titles = []
+        for item in items:
+            t = item.find("title")
+            if t is not None and t.text:
+                titles.append(t.text.strip())
+        log.info("CMD", f"News: {len(titles)} items")
+        return "Главные новости, сэр: " + ". ".join(titles[:3]) + "."
+    except Exception as e:
+        log.error("CMD", f"News: {e}")
+        return "Не удалось загрузить новости, сэр."

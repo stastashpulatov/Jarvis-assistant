@@ -4,6 +4,7 @@
 """
 import re
 from rapidfuzz import fuzz, process
+from functools import lru_cache
 from . import actions as A
 from .protocols import match_protocol
 
@@ -102,10 +103,12 @@ VOLUME_SET_PATTERNS = [
 APP_ALIAS_LIST = list(A.APP_ALIASES.keys())
 
 
+@lru_cache(maxsize=256)
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+@lru_cache(maxsize=128)
 def _resolve_app(name: str) -> str:
     key = name.strip().lower()
     if key in A.APP_ALIASES:
@@ -375,5 +378,91 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
         internal, spoken = app_match
         label = spoken if spoken != internal else internal
         return f"Запускаю {label}, сэр.", [{"action": "open_app", "target": internal}]
+
+    # ── Буфер обмена ────────────────────────────────────────────
+    if re.search(r"\b(что в буфере|прочитай буфер|clipboard read)\b", t):
+        return "", [{"action": "clipboard_read"}]
+    if re.search(r"\b(скопируй|copy to clipboard)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(скопируй|copy to clipboard)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "clipboard_copy", "text": m.group(2).strip()}]
+    if re.search(r"\b(очисти буфер|clear clipboard)\b", t):
+        return "Очищаю буфер обмена, сэр.", [{"action": "clipboard_clear"}]
+
+    # ── Процессы ─────────────────────────────────────────────────
+    if re.search(r"\b(топ процессов|процессы|processes|загрузка процесс)\b", t):
+        return "", [{"action": "get_top_processes"}]
+    if re.search(r"\b(убей процесс|заверши процесс|kill process)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(убей процесс|заверши процесс|kill process)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "kill_process", "target": m.group(2).strip()}]
+
+    # ── Яркость ───────────────────────────────────────────────────
+    if re.search(r"\b(яркост|brightn)\s*(?:на|до|at)?\s*(\d{1,3})\s*(?:%|процент\w*)?", raw, re.I):
+        m = re.search(r"\b(яркост|brightn)\s*(?:на|до|at)?\s*(\d{1,3})\s*(?:%|процент\w*)?", raw, re.I)
+        if m:
+            return "", [{"action": "brightness_set", "level": int(m.group(2))}]
+    if re.search(r"\b(ярче|brightness up)\b", t):
+        return "", [{"action": "brightness_up"}]
+    if re.search(r"\b(темнее|brightness down)\b", t):
+        return "", [{"action": "brightness_down"}]
+    if re.search(r"\b(какая яркость|brightness level)\b", t):
+        return "", [{"action": "brightness_get"}]
+
+    # ── Перевод ──────────────────────────────────────────────────
+    if re.search(r"\b(переведи|translate)\s+(.+?)\s+(?:на|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(переведи|translate)\s+(.+?)\s+(?:на|to)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "translate", "text": m.group(2).strip(), "target_lang": m.group(3).strip()}]
+
+    # ── Напоминания ─────────────────────────────────────────────
+    if re.search(r"\b(напомни|remind)\s+(.+?)\s+(?:в|at)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(напомни|remind)\s+(.+?)\s+(?:в|at)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "add_reminder", "message": m.group(2).strip(), "when": m.group(3).strip()}]
+    if re.search(r"\b(какие напоминания|list reminders)\b", t):
+        return "", [{"action": "list_reminders"}]
+    if re.search(r"\b(удали напоминания|clear reminders)\b", t):
+        return "Удаляю все напоминания, сэр.", [{"action": "clear_reminders"}]
+
+    # ── YouTube музыка ────────────────────────────────────────────
+    if re.search(r"\b(включи|играй|play)\s+(.+?)\s+(?:на ютубе|youtube|в youtube)\b", raw, re.I):
+        m = re.search(r"\b(включи|играй|play)\s+(.+?)\s+(?:на ютубе|youtube|в youtube)\b", raw, re.I)
+        if m:
+            return "", [{"action": "play_youtube", "query": m.group(2).strip()}]
+    if re.search(r"\b(останови музыку|stop music)\b", t):
+        return "", [{"action": "stop_music"}]
+
+    # ── Валюта ───────────────────────────────────────────────────
+    if re.search(r"\b(\d+)\s*(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(\d+)\s*(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
+        if m and any(cur in m.group(2).lower() for cur in ("доллар", "евро", "рубл", "сум", "$", "usd", "eur", "rub", "uzs")):
+            return "", [{"action": "convert_currency", "amount": float(m.group(1)), "from_cur": m.group(2).strip(), "to_cur": m.group(3).strip()}]
+
+    # ── Поиск файлов ────────────────────────────────────────────
+    if re.search(r"\b(найди файл|find file)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(найди файл|find file)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "find_file", "name": m.group(2).strip()}]
+
+    # ── GPU ──────────────────────────────────────────────────────
+    if re.search(r"\b(видеокарта|gpu|nvidia)\b", t) and "открой" not in t:
+        return "", [{"action": "gpu_stats"}]
+
+    # ── Окна ────────────────────────────────────────────────────
+    if re.search(r"\b(разверни окно|maximize window)\b", t):
+        return "", [{"action": "maximize_window"}]
+    if re.search(r"\b(сверни окно|minimize window)\b", t):
+        return "", [{"action": "minimize_window"}]
+    if re.search(r"\b(переключи окно|switch window|alt tab)\b", t):
+        return "", [{"action": "switch_window"}]
+
+    # ── Новости ──────────────────────────────────────────────────
+    if re.search(r"\b(новости|news)\b", t):
+        topic = ""
+        m = re.search(r"\b(новости|news)\s+(.+)$", raw, re.I)
+        if m:
+            topic = m.group(2).strip()
+        return "", [{"action": "get_news", "topic": topic}]
 
     return None

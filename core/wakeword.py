@@ -23,14 +23,27 @@ _DEACTIVATE = {
     "standby",
 }
 
+# Кэш для быстрого детектирования
+_wake_cache = {}
+
 
 def is_wake(text: str, wakeword: str, threshold: int = 72) -> bool:
     """Возвращает True если в тексте есть кодовое слово (с нечётким совпадением)"""
     t = text.lower()
+    
+    # Проверяем кэш для повторяющихся фраз
+    cache_key = t
+    if cache_key in _wake_cache:
+        return _wake_cache[cache_key]
+    
     variants = _WAKE_VARIANTS + [wakeword.lower()]
 
     for v in variants:
         if v in t:
+            _wake_cache[cache_key] = True
+            # Ограничиваем размер кэша
+            if len(_wake_cache) > 100:
+                _wake_cache.pop(next(iter(_wake_cache)))
             return True
 
     if _RF_AVAILABLE:
@@ -39,7 +52,14 @@ def is_wake(text: str, wakeword: str, threshold: int = 72) -> bool:
             for v in variants:
                 score = fuzz.ratio(word, v)
                 if score >= threshold:
+                    _wake_cache[cache_key] = True
+                    if len(_wake_cache) > 100:
+                        _wake_cache.pop(next(iter(_wake_cache)))
                     return True
+    
+    _wake_cache[cache_key] = False
+    if len(_wake_cache) > 100:
+        _wake_cache.pop(next(iter(_wake_cache)))
     return False
 
 

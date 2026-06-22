@@ -7,6 +7,7 @@ import os
 import queue
 import threading
 import json
+import time
 
 import sounddevice as sd
 import numpy as np
@@ -102,14 +103,14 @@ class STTEngine:
         text        = None
         silence_cnt = 0
         max_silence = int(silence_t * (16000 / 4000))   # approx chunks
+        start_time  = time.time()
 
         try:
             with sd.RawInputStream(samplerate=16000, blocksize=4000,
                                    dtype="int16", channels=1,
                                    callback=_callback):
-                start = __import__("time").time()
                 while True:
-                    if __import__("time").time() - start > phrase_limit:
+                    if time.time() - start_time > phrase_limit:
                         break
                     try:
                         data = q.get(timeout=0.1)

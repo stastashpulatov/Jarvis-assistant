@@ -80,8 +80,8 @@ echo OK
 echo.
 echo Step 5: Installing remaining RVC dependencies...
 rvc_env\Scripts\python.exe -m pip install faiss-cpu pyworld praat-parselmouth ^
-    librosa soundfile numpy scipy "av<17" ffmpeg-python ^
-    tqdm tensorboardX matplotlib gradio==3.34.0 -q
+    librosa soundfile sounddevice torchcrepe numpy scipy "av<17" ffmpeg-python ^
+    tqdm tensorboard tensorboardX "matplotlib<3.8" gradio==3.34.0 -q
 if errorlevel 1 (
     echo Some optional dependencies failed - continuing anyway.
     echo You can retry individually, e.g. fix_av.bat for the av package.

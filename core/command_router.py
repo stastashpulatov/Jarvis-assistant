@@ -113,6 +113,96 @@ class CommandRouter:
         elif act == "empty_trash":
             msg = A.empty_recycle_bin(self.log)
 
+        # ── Clipboard ─────────────────────────────────────────────────
+        elif act == "clipboard_read":
+            msg = A.clipboard_read(self.log)
+
+        elif act == "clipboard_copy":
+            msg = A.clipboard_copy(action.get("text", ""), self.log)
+
+        elif act == "clipboard_clear":
+            msg = A.clipboard_clear(self.log)
+
+        # ── Processes ─────────────────────────────────────────────────
+        elif act == "get_top_processes":
+            msg = A.get_top_processes(self.log)
+
+        elif act == "kill_process":
+            msg = A.kill_process(action.get("target", ""), self.log)
+
+        # ── Brightness ────────────────────────────────────────────────
+        elif act == "brightness_set":
+            msg = A.brightness_set(int(action.get("level", 50)), self.log)
+
+        elif act == "brightness_get":
+            msg = A.brightness_get(self.log)
+
+        elif act == "brightness_up":
+            msg = A.brightness_up(self.log)
+
+        elif act == "brightness_down":
+            msg = A.brightness_down(self.log)
+
+        # ── Translate ─────────────────────────────────────────────────
+        elif act == "translate":
+            msg = A.translate_text(
+                action.get("text", ""),
+                action.get("target_lang", "en"),
+                self.log
+            )
+
+        # ── Reminders ─────────────────────────────────────────────────
+        elif act == "add_reminder":
+            msg = A.add_reminder(
+                action.get("message", ""),
+                action.get("when", ""),
+                self.log
+            )
+
+        elif act == "list_reminders":
+            msg = A.list_reminders(self.log)
+
+        elif act == "clear_reminders":
+            msg = A.clear_reminders(self.log)
+
+        # ── YouTube Music ─────────────────────────────────────────────
+        elif act == "play_youtube":
+            msg = A.play_youtube(action.get("query", ""), self.log)
+
+        elif act == "stop_music":
+            msg = A.stop_music(self.log)
+
+        # ── Currency ──────────────────────────────────────────────────
+        elif act == "convert_currency":
+            msg = A.convert_currency(
+                float(action.get("amount", 1)),
+                action.get("from_cur", "USD"),
+                action.get("to_cur", "RUB"),
+                self.log
+            )
+
+        # ── File Search ───────────────────────────────────────────────
+        elif act == "find_file":
+            msg = A.find_file(action.get("name", ""), self.log)
+
+        # ── GPU Stats ──────────────────────────────────────────────────
+        elif act == "gpu_stats":
+            msg = A.get_gpu_stats(self.log)
+
+        # ── Window Management ─────────────────────────────────────────
+        elif act == "maximize_window":
+            msg = A.maximize_window(self.log)
+
+        elif act == "minimize_window":
+            msg = A.minimize_window(self.log)
+
+        elif act == "switch_window":
+            msg = A.switch_window(self.log)
+
+        # ── News ───────────────────────────────────────────────────────
+        elif act == "get_news":
+            msg = A.get_news(action.get("topic", ""), self.log)
+
         elif act == "none":
             return
 

@@ -32,6 +32,10 @@ class Assistant:
         self.ai     = GeminiAI(self.cfg, self.log)
         self.router = CommandRouter(self.log)
 
+        # Запускаем поток напоминаний
+        from . import actions as A
+        A.start_reminder_thread(self.tts, self.log)
+
         jarvis_cfg = self.cfg.get("jarvis", {})
         self.wakeword        = self.cfg["A"]["wakeword"]
         self.command_timeout = float(self.cfg["A"]["command_timeout"])
@@ -86,7 +90,11 @@ class Assistant:
             self.speak(speech)
 
         if actions:
-            self.router.route_all(actions, self.tts)
+            # Выполняем действия асинхронно для скорости
+            import threading
+            def run_actions():
+                self.router.route_all(actions, self.tts)
+            threading.Thread(target=run_actions, daemon=True).start()
 
     def _maybe_suggest(self, active: bool, last_suggestion_t: float) -> float:
         """Редкие полезные подсказки, когда пользователь молчит."""

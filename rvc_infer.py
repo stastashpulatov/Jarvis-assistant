@@ -40,7 +40,16 @@ def main():
         print(f"ERROR: model not found: {model_path}")
         sys.exit(2)
 
-    config = Config()
+    # RVC-WebUI's Config() parses sys.argv via argparse internally.
+    # Our own positional args (input.wav output.wav pitch_shift) would
+    # make argparse choke with "unrecognized arguments", so we hide
+    # them from argv just for the duration of the Config() call.
+    _saved_argv = sys.argv
+    sys.argv = sys.argv[:1]
+    try:
+        config = Config()
+    finally:
+        sys.argv = _saved_argv
 
     cpt = torch.load(model_path, map_location="cpu", weights_only=False)
     tgt_sr = cpt["config"][-1]
@@ -61,6 +70,10 @@ def main():
     net_g.eval().to(config.device)
     net_g = net_g.half() if config.is_half else net_g.float()
 
+    # RVC-WebUI's pipeline.py expects this env var to be set by infer-web.py
+    # normally; since we bypass the web UI entirely, we set it ourselves.
+    os.environ["rmvpe_root"] = os.path.abspath("assets/rmvpe")
+
     pipeline = Pipeline(tgt_sr, config)
     hubert_model = load_hubert(config)
 
@@ -69,7 +82,9 @@ def main():
     if audio_max > 1:
         audio /= audio_max
 
-    file_index = index_path if os.path.exists(index_path) else ""
+    file_index = index_path if os.path.exists(index_path) else ""  
+
+    
 
     audio_opt = pipeline.pipeline(
         hubert_model,
@@ -87,6 +102,7 @@ def main():
         tgt_sr,
         0,                  # resample_sr (0 = no resample)
         0.25,               # rms_mix_rate
+        version,            # model version ("v1" or "v2")
         0.33,               # protect
         None,               # f0_file
     )

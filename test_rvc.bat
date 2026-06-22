@@ -27,11 +27,11 @@ cd ..\..
 
 echo.
 echo Playing ORIGINAL Silero voice...
-rvc_env\Scripts\python.exe -c "import soundfile as sf, sounddevice as sd; d,sr=sf.read('rvc_env/RVC/_silero_out.wav'); sd.play(d,sr); sd.wait()"
+rvc_env\Scripts\python.exe -c "import soundfile as sf, sounddevice as sd, librosa, numpy as np; d,sr=sf.read('rvc_env/RVC/_silero_out.wav'); d2=librosa.resample(np.asarray(d,dtype=np.float32), orig_sr=sr, target_sr=48000); sd.play(d2,48000); sd.wait()"
 
 echo.
 echo Playing CONVERTED JARVIS voice...
-rvc_env\Scripts\python.exe -c "import soundfile as sf, sounddevice as sd; d,sr=sf.read('rvc_env/RVC/_jarvis_out.wav'); sd.play(d,sr); sd.wait()"
+rvc_env\Scripts\python.exe -c "import soundfile as sf, sounddevice as sd, librosa, numpy as np; d,sr=sf.read('rvc_env/RVC/_jarvis_out.wav'); d2=librosa.resample(np.asarray(d,dtype=np.float32), orig_sr=sr, target_sr=48000); sd.play(d2,48000); sd.wait()"
 
 echo.
 echo Done! Compare the two voices above.

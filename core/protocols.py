@@ -70,6 +70,37 @@ PROTOCOLS: dict[str, tuple] = {
         ],
         ("фокус", "focus", "концентрац", "не отвлек"),
     ),
+    "coding": (
+        "Протокол программирования активирован, сэр. Подготавливаю инструменты разработки.",
+        [
+            {"action": "open_app", "target": "vscode"},
+            {"action": "open_urls", "browser": "msedge",
+             "urls": ["https://github.com", "https://stackoverflow.com", "https://docs.python.org"]},
+            {"action": "open_app", "target": "msedge"},
+            {"action": "volume_set", "level": 30},
+        ],
+        ("кодинг", "coding", "программирование", "разработка", "dev"),
+    ),
+    "social": (
+        "Социальный протокол, сэр. Подключаюсь к коммуникациям.",
+        [
+            {"action": "open_app", "target": "telegram"},
+            {"action": "open_app", "target": "discord"},
+            {"action": "volume_set", "level": 60},
+        ],
+        ("социальн", "social", "общение", "чат"),
+    ),
+    "study": (
+        "Режим обучения, сэр. Создаю условия для концентрации.",
+        [
+            {"action": "open_app", "target": "msedge"},
+            {"action": "open_urls", "browser": "msedge",
+             "urls": ["https://youtube.com"]},
+            {"action": "volume_set", "level": 40},
+            {"action": "brightness_set", "level": 70},
+        ],
+        ("учеб", "study", "изучение", "обучение", "лекция"),
+    ),
 }
 
 

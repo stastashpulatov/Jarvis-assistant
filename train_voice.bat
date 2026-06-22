@@ -17,23 +17,34 @@ if not exist rvc_env\RVC\infer-web.py (
     exit /b 1
 )
 
-if not exist voices\jarvis_sample.wav (
-    echo ERROR: voices\jarvis_sample.wav not found.
+dir /b voices\*.wav >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: no WAV files found in voices\
     echo Put at least one WAV sample of the target voice into voices\ first.
     pause
     exit /b 1
 )
 
 echo Step 1: Preparing dataset folder...
-if not exist dataset_raw mkdir dataset_raw
-copy /Y voices\jarvis_sample.wav  dataset_raw\jarvis_sample.wav  >nul
-if exist voices\jarvis_sample1.wav copy /Y voices\jarvis_sample1.wav dataset_raw\jarvis_sample1.wav >nul
-echo OK - copied WAV samples to dataset_raw\
+if exist dataset_raw rmdir /s /q dataset_raw
+mkdir dataset_raw
+for %%F in (voices\*.wav) do (
+    if /i not "%%~nxF"=="jarvis_sample.wav" copy /Y "%%F" "dataset_raw\%%~nxF" >nul
+)
+echo OK - copied WAV files to dataset_raw\, see below:
+dir /b dataset_raw\*.wav
+echo NOTE: jarvis_sample.wav is intentionally skipped if present - it was
+echo detected as a music or vocal track, kupigolos.ru metadata, no speech
+echo pauses, not clean speech, and would degrade the trained voice.
 
 if not exist rvc_env\RVC\rvc_infer.py copy /Y rvc_infer.py rvc_env\RVC\rvc_infer.py >nul
 
 cd %RVC%
-if not exist logs\%EXP% mkdir logs\%EXP%
+if exist logs\%EXP% (
+    echo Removing previous logs\%EXP% to avoid mixing old music-contaminated data...
+    rmdir /s /q logs\%EXP%
+)
+mkdir logs\%EXP%
 
 echo.
 echo Step 2: Preprocessing audio (slicing)...
@@ -60,10 +71,11 @@ if errorlevel 1 (echo FAILED generating filelist & cd ..\.. & pause & exit /b 1)
 echo OK
 
 echo.
-echo Step 6: Training (200 epochs, batch 4, save every 50)...
-echo This is the GPU-heavy part. Please wait...
+echo Step 6: Training (500 epochs, batch 2, save every 100)...
+echo This is the GPU-heavy part. Please wait - this will take a while.
 set USE_LIBUV=0
-%PY% infer/modules/train/train.py -e %EXP% -sr 40k -f0 1 -bs 2 -te 200 -se 50 -pg assets/pretrained_v2/f0G40k.pth -pd assets/pretrained_v2/f0D40k.pth -l 0 -c 0 -sw 1 -v v2
+set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+%PY% infer/modules/train/train.py -e %EXP% -sr 40k -f0 1 -bs 2 -te 500 -se 100 -pg assets/pretrained_v2/f0G40k.pth -pd assets/pretrained_v2/f0D40k.pth -l 0 -c 0 -sw 1 -v v2
 if errorlevel 1 (echo FAILED at training & cd ..\.. & pause & exit /b 1)
 echo OK
 
@@ -77,7 +89,7 @@ if not exist assets\weights\%EXP%.pth (
         echo FAILED - could not produce assets\weights\%EXP%.pth automatically.
         echo Check logs\%EXP%\ for G_*.pth checkpoints and export manually.
         cd ..\..
-        pause
+        pause 
         exit /b 1
     )
     echo OK - exported weights to assets\weights\%EXP%.pth
@@ -99,6 +111,6 @@ echo  Weights: rvc_env\RVC\assets\weights\jarvis.pth
 echo  Index:   rvc_env\RVC\logs\jarvis\added_jarvis_v2.index
 echo ============================================
 echo Next step: run test_rvc.bat to hear the voice,
-echo then run start.bat (or python main.py) - JARVIS
+echo then run start.bat or python main.py - JARVIS
 echo will automatically use the trained voice.
 pause

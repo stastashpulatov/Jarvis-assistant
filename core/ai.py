@@ -6,6 +6,7 @@ import re
 import json
 import time
 import requests
+import hashlib
 
 
 SYSTEM_PROMPT = """Ты J.A.R.V.I.S. — искусственный интеллект из вселенной «Железного человека».
@@ -88,6 +89,10 @@ class GeminiAI:
         self.active_provider = "none"
         self.history = []
         self.cooldown_until = 0.0
+        # Кэширование только если включено в конфиге
+        cache_enabled = self.cfg.get("jarvis", {}).get("cache_enabled", True)
+        self._cache = {} if cache_enabled else None
+        self._cache_max_size = 100
         self._init()
 
     def _init(self):
@@ -135,13 +140,45 @@ class GeminiAI:
     def ready(self) -> bool:
         return self.active_provider == "ollama" or self.client is not None
 
+    def _get_cache_key(self, text: str) -> str:
+        """Генерирует ключ для кэша на основе текста."""
+        return hashlib.md5(text.encode()).hexdigest()
+
+    def _get_cached(self, text: str) -> tuple | None:
+        """Получает ответ из кэша если есть."""
+        if self._cache is None:
+            return None
+        key = self._get_cache_key(text)
+        if key in self._cache:
+            return self._cache[key]
+        return None
+
+    def _set_cache(self, text: str, result: tuple):
+        """Сохраняет ответ в кэш."""
+        if self._cache is None:
+            return
+        key = self._get_cache_key(text)
+        if len(self._cache) >= self._cache_max_size:
+            # Удаляем самый старый элемент
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
+        self._cache[key] = result
+
     def ask(self, user_text: str) -> tuple:
         """Возвращает (текст_для_озвучки, actions_list). actions_list может быть пустым."""
         if not self.ready:
             return "Сэр, нейросеть не подключена. Запустите Ollama или проверьте настройки в config.yaml.", []
 
+        # Проверяем кэш для простых запросов
+        cached = self._get_cached(user_text)
+        if cached:
+            self.log.debug("AI", "Ответ из кэша")
+            return cached
+
         if self.active_provider == "ollama":
-            return self._ask_ollama(user_text)
+            result = self._ask_ollama(user_text)
+            self._set_cache(user_text, result)
+            return result
 
         now = time.time()
         if now < self.cooldown_until:
@@ -240,7 +277,8 @@ class GeminiAI:
             if len(self.history) > 8:
                 self.history = self.history[-8:]
             self.log.debug("AI", f"Ollama ответ: {reply[:100]}")
-            return self._parse(reply)
+            result = self._parse(reply)
+            return result
         except Exception as e:
             self.log.error("AI", f"Ollama ошибка: {e}")
             if self.history and self.history[-1]["role"] == "user":
