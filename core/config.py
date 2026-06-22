@@ -7,14 +7,14 @@ _DEFAULT_CONFIG = {
     "A": {
         "name": "J.A.R.V.I.S.",
         "wakeword": "джарвис",
-        "command_timeout": 12,
-        "idle_timeout": 90,
+        "command_timeout": 10,
+        "idle_timeout": 75,
         "always_on": True,
     },
     "audio": {
-        "silence_timeout": 1.0,
+        "silence_timeout": 1.2,
         "energy_threshold": 300,
-        "phrase_limit": 10,
+        "phrase_limit": 6,
     },
     "voice": {
         "engine": "silero",
@@ -38,9 +38,11 @@ _DEFAULT_CONFIG = {
         "base_url": "http://127.0.0.1:11434",
         "model": "qwen2.5:7b-instruct",
         "fallback_model": "qwen2.5:3b-instruct",
-        "num_predict": 160,
+        "num_predict": 120,
         "temperature": 0.35,
-        "timeout": 45,
+        "timeout": 6,
+        "num_ctx": 2048,
+        "num_thread": 4,
     },
     "logging": {
         "enabled": True,

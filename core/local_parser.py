@@ -372,6 +372,36 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
         target = _resolve_app(m.group(1).strip())
         return f"Закрываю {target}, сэр.", [{"action": "close_app", "target": target}]
 
+    # ── Составные команды: открыть приложение + создать заметку ─────
+    compound_app_note = re.search(
+        r"(?:открой|запусти|open|launch)\s+(.+?)\s+(?:и|and)\s+(?:напиши|создай|запиши|write|create)\s+(?:там|в нём|в ней|there|in it)\s+(.+)$",
+        raw, re.I
+    )
+    if compound_app_note:
+        app_name = compound_app_note.group(1).strip()
+        note_text = compound_app_note.group(2).strip()
+        internal = _resolve_app(app_name)
+        label = app_name if app_name != internal else internal
+        return f"Открываю {label} и создаю заметку, сэр.", [
+            {"action": "open_app", "target": internal},
+            {"action": "create_note", "text": note_text}
+        ]
+
+    # ── Составные команды: открыть приложение + текст (простой вариант) ─
+    compound_simple = re.search(
+        r"(?:открой|запусти|open|launch)\s+(.+?)\s+(?:и|and)\s+(?:напиши|запиши|write)\s+(.+)$",
+        raw, re.I
+    )
+    if compound_simple:
+        app_name = compound_simple.group(1).strip()
+        note_text = compound_simple.group(2).strip()
+        internal = _resolve_app(app_name)
+        label = app_name if app_name != internal else internal
+        return f"Открываю {label} и создаю заметку, сэр.", [
+            {"action": "open_app", "target": internal},
+            {"action": "create_note", "text": note_text}
+        ]
+
     # ── Открыть приложение ────────────────────────────────────────
     app_match = _match_app_open(raw)
     if app_match:

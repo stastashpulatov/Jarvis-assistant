@@ -349,7 +349,7 @@ class TTSEngine:
 
             speaker = self.cfg.get("voice", {}).get("silero_speaker", "aidar")
 
-            # Оптимизация: кэширование модели на GPU
+            # Оптимизация: кэширование модели на GPU + более быстрая речь
             with torch.no_grad():
                 audio = self._model.apply_tts(
                     text=text,
@@ -381,12 +381,15 @@ class TTSEngine:
     def _speak_pyttsx3(self, text: str):
         if self._tts:
             try:
+                # Оптимизация скорости речи
+                self._tts.setProperty('rate', 200)
                 self._tts.say(text)
                 self._tts.runAndWait()
             except Exception:
                 try:
                     import pyttsx3
                     self._tts = pyttsx3.init()
+                    self._tts.setProperty('rate', 200)
                     self._tts.say(text)
                     self._tts.runAndWait()
                 except Exception:

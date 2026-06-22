@@ -36,6 +36,14 @@ class Assistant:
         from . import actions as A
         A.start_reminder_thread(self.tts, self.log)
 
+        # Инициализируем звуковые эффекты
+        try:
+            from . import sound_effects as SE
+            self.sound_effects = SE.SoundEffects(self.log)
+            self.sound_effects.play_startup()
+        except Exception:
+            self.sound_effects = None
+
         jarvis_cfg = self.cfg.get("jarvis", {})
         self.wakeword        = self.cfg["A"]["wakeword"]
         self.command_timeout = float(self.cfg["A"]["command_timeout"])
@@ -70,6 +78,9 @@ class Assistant:
 
     def speak(self, text: str):
         self.log.jarvis(text)
+        # Воспроизводим звук активации перед речью
+        if self.sound_effects:
+            self.sound_effects.play_in_background("activation")
         self.tts.speak(text)
 
     def _process(self, user_text: str):
