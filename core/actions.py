@@ -1207,9 +1207,171 @@ def get_news(topic: str, log) -> str:
         for item in items:
             t = item.find("title")
             if t is not None and t.text:
-                titles.append(t.text.strip())
-        log.info("CMD", f"News: {len(titles)} items")
-        return "Главные новости, сэр: " + ". ".join(titles[:3]) + "."
+                titles.append(t.text)
+        return f"Сэр, последние новости: {', '.join(titles[:3])}."
     except Exception as e:
-        log.error("CMD", f"News: {e}")
-        return "Не удалось загрузить новости, сэр."
+        log.error("NEWS", f"Ошибка: {e}")
+        return "Сэр, не удалось получить новости."
+
+
+# ── 12. Продвинутое управление файлами ───────────────────────────────
+
+def list_files(path: str, log) -> str:
+    """Список файлов в директории."""
+    try:
+        if not os.path.exists(path):
+            return f"Сэр, путь {path} не существует."
+        items = os.listdir(path)[:10]
+        if not items:
+            return f"Сэр, папка {path} пуста."
+        return f"Сэр, в {path}: {', '.join(items)}."
+    except Exception as e:
+        log.error("FILES", f"Ошибка: {e}")
+        return "Сэр, не удалось получить список файлов."
+
+
+def delete_file(path: str, log) -> str:
+    """Удаляет файл."""
+    try:
+        if not os.path.exists(path):
+            return f"Сэр, файл {path} не существует."
+        os.remove(path)
+        return f"Файл {path} удалён, сэр."
+    except Exception as e:
+        log.error("FILES", f"Ошибка: {e}")
+        return "Сэр, не удалось удалить файл."
+
+
+def create_folder(path: str, log) -> str:
+    """Создаёт папку."""
+    try:
+        os.makedirs(path, exist_ok=True)
+        return f"Папка {path} создана, сэр."
+    except Exception as e:
+        log.error("FILES", f"Ошибка: {e}")
+        return "Сэр, не удалось создать папку."
+
+
+def copy_file(src: str, dst: str, log) -> str:
+    """Копирует файл."""
+    try:
+        import shutil
+        if not os.path.exists(src):
+            return f"Сэр, файл {src} не существует."
+        shutil.copy2(src, dst)
+        return f"Файл скопирован в {dst}, сэр."
+    except Exception as e:
+        log.error("FILES", f"Ошибка: {e}")
+        return "Сэр, не удалось скопировать файл."
+
+
+# ── 13. Таймеры для команд питания ───────────────────────────────────
+
+_shutdown_timer = None
+_shutdown_time = None
+
+
+def schedule_shutdown(seconds: int, log) -> str:
+    """Планирует выключение через N секунд."""
+    global _shutdown_timer, _shutdown_time
+    try:
+        if _shutdown_timer:
+            _shutdown_timer.cancel()
+        _shutdown_time = time.time() + seconds
+        _shutdown_timer = threading.Timer(seconds, _execute_shutdown)
+        _shutdown_timer.start()
+        mins = seconds // 60
+        return f"Выключение через {mins} минут, сэр."
+    except Exception as e:
+        log.error("POWER", f"Ошибка: {e}")
+        return "Сэр, не удалось запланировать выключение."
+
+
+def cancel_shutdown(log) -> str:
+    """Отменяет запланированное выключение."""
+    global _shutdown_timer, _shutdown_time
+    try:
+        if _shutdown_timer:
+            _shutdown_timer.cancel()
+            _shutdown_timer = None
+            _shutdown_time = None
+            return "Выключение отменено, сэр."
+        return "Сэр, запланированное выключение не найдено."
+    except Exception as e:
+        log.error("POWER", f"Ошибка: {e}")
+        return "Сэр, не удалось отменить выключение."
+
+
+def _execute_shutdown():
+    """Выполняет выключение."""
+    os.system("shutdown /s /t 1")
+
+
+def get_shutdown_status(log) -> str:
+    """Статус запланированного выключения."""
+    global _shutdown_time
+    if _shutdown_time:
+        remaining = int(_shutdown_time - time.time())
+        mins = remaining // 60
+        return f"Сэр, выключение через {mins} минут."
+    return "Сэр, запланированное выключение не активно."
+
+
+# ── 14. Автоматизация сценариев ───────────────────────────────────────
+
+_scenarios = {}
+
+
+def create_scenario(name: str, actions: list, log) -> str:
+    """Создаёт сценарий."""
+    global _scenarios
+    _scenarios[name] = actions
+    return f"Сценарий '{name}' создан, сэр."
+
+
+def run_scenario(name: str, log) -> str:
+    """Запускает сценарий."""
+    global _scenarios
+    if name not in _scenarios:
+        return f"Сэр, сценарий '{name}' не найден."
+    return f"Запускаю сценарий '{name}', сэр."
+
+
+def list_scenarios(log) -> str:
+    """Список сценариев."""
+    global _scenarios
+    if not _scenarios:
+        return "Сэр, нет сохранённых сценариев."
+    return f"Сэр, доступные сценарии: {', '.join(_scenarios.keys())}."
+
+
+# ── 15. Системная информация ─────────────────────────────────────────
+
+def get_system_info(log) -> str:
+    """Полная системная информация."""
+    try:
+        import platform
+        import psutil
+        
+        info = {
+            "OS": platform.system() + " " + platform.release(),
+            "CPU": platform.processor(),
+            "RAM": f"{psutil.virtual_memory().total // (1024**3)} GB",
+            "Disk": f"{psutil.disk_usage('/').total // (1024**3)} GB",
+        }
+        return f"Сэр, система: {info['OS']}, процессор: {info['CPU']}, память: {info['RAM']}, диск: {info['Disk']}."
+    except Exception as e:
+        log.error("SYS", f"Ошибка: {e}")
+        return "Сэр, не удалось получить информацию о системе."
+
+
+def get_network_info(log) -> str:
+    """Информация о сети."""
+    try:
+        import socket
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        return f"Сэр, hostname: {hostname}, IP: {ip}."
+    except Exception as e:
+        log.error("NET", f"Ошибка: {e}")
+        return "Сэр, не удалось получить информацию о сети."

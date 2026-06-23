@@ -495,4 +495,51 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
             topic = m.group(2).strip()
         return "", [{"action": "get_news", "topic": topic}]
 
+    # ── Файлы ────────────────────────────────────────────────────
+    if re.search(r"\b(список файлов|list files)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(список файлов|list files)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "list_files", "path": m.group(2).strip()}]
+    if re.search(r"\b(удали файл|delete file)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(удали файл|delete file)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "delete_file", "path": m.group(2).strip()}]
+    if re.search(r"\b(создай папку|create folder)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(создай папку|create folder)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "create_folder", "path": m.group(2).strip()}]
+
+    # ── Таймеры питания ───────────────────────────────────────────
+    if re.search(r"\b(выключи через|shutdown in)\s+(\d+)\s*(?:минут|minutes?|секунд|seconds?)", raw, re.I):
+        m = re.search(r"\b(выключи через|shutdown in)\s+(\d+)\s*(?:минут|minutes?|секунд|seconds?)", raw, re.I)
+        if m:
+            value = int(m.group(2))
+            if "минут" in m.group(0).lower() or "min" in m.group(0).lower():
+                seconds = value * 60
+            else:
+                seconds = value
+            return "", [{"action": "schedule_shutdown", "seconds": seconds}]
+    if re.search(r"\b(отмени выключение|cancel shutdown)\b", t):
+        return "", [{"action": "cancel_shutdown"}]
+    if re.search(r"\b(статус выключения|shutdown status)\b", t):
+        return "", [{"action": "shutdown_status"}]
+
+    # ── Системная информация ───────────────────────────────────────
+    if re.search(r"\b(системная информация|system info|инфо системы)\b", t):
+        return "", [{"action": "system_info"}]
+    if re.search(r"\b(сеть|network|ip)\b", t) and "открой" not in t:
+        return "", [{"action": "network_info"}]
+
+    # ── Сценарии ─────────────────────────────────────────────────
+    if re.search(r"\b(создай сценарий|create scenario)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(создай сценарий|create scenario)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "create_scenario", "name": m.group(2).strip(), "actions": []}]
+    if re.search(r"\b(запусти сценарий|run scenario)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(запусти сценарий|run scenario)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "run_scenario", "name": m.group(2).strip()}]
+    if re.search(r"\b(список сценариев|list scenarios)\b", t):
+        return "", [{"action": "list_scenarios"}]
+
     return None

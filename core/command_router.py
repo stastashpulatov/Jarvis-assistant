@@ -203,6 +203,46 @@ class CommandRouter:
         elif act == "get_news":
             msg = A.get_news(action.get("topic", ""), self.log)
 
+        # ── File Management ───────────────────────────────────────────
+        elif act == "list_files":
+            msg = A.list_files(action.get("path", "."), self.log)
+
+        elif act == "delete_file":
+            msg = A.delete_file(action.get("path", ""), self.log)
+
+        elif act == "create_folder":
+            msg = A.create_folder(action.get("path", ""), self.log)
+
+        elif act == "copy_file":
+            msg = A.copy_file(action.get("src", ""), action.get("dst", ""), self.log)
+
+        # ── Power Timers ───────────────────────────────────────────────
+        elif act == "schedule_shutdown":
+            msg = A.schedule_shutdown(int(action.get("seconds", 60)), self.log)
+
+        elif act == "cancel_shutdown":
+            msg = A.cancel_shutdown(self.log)
+
+        elif act == "shutdown_status":
+            msg = A.get_shutdown_status(self.log)
+
+        # ── Scenarios ────────────────────────────────────────────────
+        elif act == "create_scenario":
+            msg = A.create_scenario(action.get("name", ""), action.get("actions", []), self.log)
+
+        elif act == "run_scenario":
+            msg = A.run_scenario(action.get("name", ""), self.log)
+
+        elif act == "list_scenarios":
+            msg = A.list_scenarios(self.log)
+
+        # ── System Info ──────────────────────────────────────────────
+        elif act == "system_info":
+            msg = A.get_system_info(self.log)
+
+        elif act == "network_info":
+            msg = A.get_network_info(self.log)
+
         elif act == "none":
             return
 

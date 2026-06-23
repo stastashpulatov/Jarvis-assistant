@@ -111,7 +111,7 @@ class GeminiAI:
         # Кэширование только если включено в конфиге
         cache_enabled = self.cfg.get("jarvis", {}).get("cache_enabled", True)
         self._cache = {} if cache_enabled else None
-        self._cache_max_size = 100
+        self._cache_max_size = 200  # Увеличен кэш для скорости
         self._init()
 
     def _init(self):
@@ -284,8 +284,11 @@ class GeminiAI:
             "options": {
                 "temperature": float(self.cfg["ollama"]["temperature"]),
                 "num_predict": int(self.cfg["ollama"]["num_predict"]),
-                "num_ctx": 2048,  # Уменьшен контекст для скорости
+                "num_ctx": 1024,  # Уменьшен контекст для скорости
                 "num_thread": 4,  # Многопоточность
+                "use_mmap": True,  # Маппинг памяти для скорости
+                "num_gpu": 1,  # Использование GPU
+                "num_batch": 1,  # Оптимизация батчинга
             },
         }
         try:

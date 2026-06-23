@@ -44,6 +44,13 @@ class Assistant:
         except Exception:
             self.sound_effects = None
 
+        # Предзагрузка AI для мгновенного ответа
+        self.log.info("INIT", "Предзагрузка AI модели...")
+        try:
+            self.ai.ask("")  # Тестовый запрос для инициализации
+        except:
+            pass
+
         jarvis_cfg = self.cfg.get("jarvis", {})
         self.wakeword        = self.cfg["A"]["wakeword"]
         self.command_timeout = float(self.cfg["A"]["command_timeout"])
