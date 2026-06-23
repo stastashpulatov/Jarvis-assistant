@@ -22,6 +22,7 @@ _DEFAULT_CONFIG = {
         "offline_rate": 160,
         "offline_volume": 1.0,
         "rvc_pitch_shift": 0,
+        "enable_rvc": False,  # Отключено для скорости
     },
     "gemini": {
         "api_key": "",

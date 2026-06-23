@@ -372,6 +372,23 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
         target = _resolve_app(m.group(1).strip())
         return f"Закрываю {target}, сэр.", [{"action": "close_app", "target": target}]
 
+    # ── Составные команды: открыть приложение + открыть приложение ─────
+    compound_app_app = re.search(
+        r"(?:открой|запусти|open|launch)\s+(.+?)\s+(?:и|and|затем|then|оттуда|потом)\s+(?:открой|запусти|open|launch)\s+(.+)$",
+        raw, re.I
+    )
+    if compound_app_app:
+        app1 = compound_app_app.group(1).strip()
+        app2 = compound_app_app.group(2).strip()
+        internal1 = _resolve_app(app1)
+        internal2 = _resolve_app(app2)
+        label1 = app1 if app1 != internal1 else internal1
+        label2 = app2 if app2 != internal2 else internal2
+        return f"Открываю {label1} и {label2}, сэр.", [
+            {"action": "open_app", "target": internal1},
+            {"action": "open_app", "target": internal2}
+        ]
+
     # ── Составные команды: открыть приложение + создать заметку ─────
     compound_app_note = re.search(
         r"(?:открой|запусти|open|launch)\s+(.+?)\s+(?:и|and)\s+(?:напиши|создай|запиши|write|create)\s+(?:там|в нём|в ней|there|in it)\s+(.+)$",
