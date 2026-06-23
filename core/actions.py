@@ -1198,9 +1198,9 @@ def get_news(topic: str, log) -> str:
             "россия": "https://lenta.ru/rss/news/russia",
         }
         url = feeds.get(topic.lower().strip(), feeds[""])
-        r = requests.get(url, timeout=6, headers={"User-Agent": "JARVIS/1.0"})
+        r = requests.get(url, timeout=4, headers={"User-Agent": "JARVIS/1.0"})  # Уменьшен timeout
         root = ET.fromstring(r.text)
-        items = root.findall(".//item")[:4]
+        items = root.findall(".//item")[:3]  # Уменьшено количество
         if not items:
             return "Сэр, новости недоступны."
         titles = []
@@ -1208,7 +1208,7 @@ def get_news(topic: str, log) -> str:
             t = item.find("title")
             if t is not None and t.text:
                 titles.append(t.text)
-        return f"Сэр, последние новости: {', '.join(titles[:3])}."
+        return f"Сэр, последние новости: {', '.join(titles[:2])}."  # Уменьшено количество
     except Exception as e:
         log.error("NEWS", f"Ошибка: {e}")
         return "Сэр, не удалось получить новости."

@@ -64,6 +64,10 @@ class Assistant:
         self.command_timeout = float(self.cfg["A"]["command_timeout"])
         self.idle_timeout    = float(self.cfg["A"]["idle_timeout"])
         self.always_on       = bool(self.cfg["A"].get("always_on", True))
+        
+        # Кэш результатов команд для скорости
+        self._command_cache = {}
+        self._cache_ttl = 60  # Кэш на 60 секунд
         self.user_name       = jarvis_cfg.get("user_name", "сэр")
         self.boot_animation  = jarvis_cfg.get("boot_animation", True)
         self.proactive       = bool(jarvis_cfg.get("proactive", True))
@@ -93,9 +97,9 @@ class Assistant:
 
     def speak(self, text: str):
         self.log.jarvis(text)
-        # Воспроизводим звук активации перед речью
-        if self.sound_effects:
-            self.sound_effects.play_in_background("activation")
+        # Воспроизводим звук активации перед речью (опционально для скорости)
+        # if self.sound_effects:
+        #     self.sound_effects.play_in_background("activation")
         self.tts.speak(text)
 
     def _process(self, user_text: str):
