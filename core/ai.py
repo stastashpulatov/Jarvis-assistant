@@ -60,6 +60,18 @@ Just A Rather Very Intelligent System. Управляешь компьютеро
 {"action": "gpu_stats"}
 {"action": "maximize_window"} / {"action": "minimize_window"} / {"action": "switch_window"}
 {"action": "get_news", "topic": "..."}
+{"action": "list_wifi"}
+{"action": "connect_wifi", "ssid": "...", "password": "..."}
+{"action": "disconnect_wifi"}
+{"action": "wifi_status"}
+{"action": "start_recording"}
+{"action": "stop_recording"}
+{"action": "compress", "files": ["file1.txt", "file2.txt"], "output": "archive.zip"}
+{"action": "extract", "archive": "archive.zip", "dest": "."}
+{"action": "search_in_files", "query": "...", "path": "."}
+{"action": "take_photo"}
+{"action": "calendar_events"}
+{"action": "create_event", "subject": "...", "start": "2024-01-01 10:00"}
 {"action": "none"}
 
 ПРОТОКОЛЫ (скажи пользователю что активируешь):
@@ -289,6 +301,8 @@ class GeminiAI:
                 "use_mmap": True,  # Маппинг памяти для скорости
                 "num_gpu": 1,  # Использование GPU
                 "num_batch": 1,  # Оптимизация батчинга
+                "repeat_last_n": 0,  # Отключаем повторения для скорости
+                "repeat_penalty": 1.1,  # Штраф за повторения
             },
         }
         try:

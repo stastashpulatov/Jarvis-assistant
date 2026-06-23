@@ -539,7 +539,51 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
         m = re.search(r"\b(запусти сценарий|run scenario)\s+(.+)$", raw, re.I)
         if m:
             return "", [{"action": "run_scenario", "name": m.group(2).strip()}]
-    if re.search(r"\b(список сценариев|list scenarios)\b", t):
+    if re.search(r"\b(список сценарие[вй]|list scenarios)\b", t):
         return "", [{"action": "list_scenarios"}]
+
+    # ── Wi-Fi ─────────────────────────────────────────────────────
+    if re.search(r"\b(список wifi|wifi сети|list wifi)\b", t):
+        return "", [{"action": "list_wifi"}]
+    if re.search(r"\b(подключись к wifi|connect wifi)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(подключись к wifi|connect wifi)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "connect_wifi", "ssid": m.group(2).strip(), "password": ""}]
+    if re.search(r"\b(отключись от wifi|disconnect wifi)\b", t):
+        return "", [{"action": "disconnect_wifi"}]
+    if re.search(r"\b(статус wifi|wifi статус|wifi status)\b", t):
+        return "", [{"action": "wifi_status"}]
+
+    # ── Запись экрана ───────────────────────────────────────────
+    if re.search(r"\b(начни запись|start recording|запиши экран)\b", t):
+        return "", [{"action": "start_recording"}]
+    if re.search(r"\b(останови запись|stop recording)\b", t):
+        return "", [{"action": "stop_recording"}]
+
+    # ── Сжатие файлов ───────────────────────────────────────────
+    if re.search(r"\b(сожми файлы|compress files)\b", t):
+        return "", [{"action": "compress", "files": [], "output": "archive.zip"}]
+    if re.search(r"\b(распакуй|extract)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(распакуй|extract)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "extract", "archive": m.group(2).strip(), "dest": "."}]
+
+    # ── Поиск в файлах ───────────────────────────────────────────
+    if re.search(r"\b(найди в файлах|search in files)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(найди в файлах|search in files)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "search_in_files", "query": m.group(2).strip(), "path": "."}]
+
+    # ── Камера ───────────────────────────────────────────────────
+    if re.search(r"\b(сделай фото|take photo|фотография)\b", t):
+        return "", [{"action": "take_photo"}]
+
+    # ── Календарь ───────────────────────────────────────────────
+    if re.search(r"\b(события календаря|calendar events|расписание)\b", t):
+        return "", [{"action": "calendar_events"}]
+    if re.search(r"\b(создай событие|create event)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(создай событие|create event)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "create_event", "subject": m.group(2).strip(), "start": ""}]
 
     return None

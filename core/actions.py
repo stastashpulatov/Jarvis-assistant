@@ -1375,3 +1375,241 @@ def get_network_info(log) -> str:
     except Exception as e:
         log.error("NET", f"Ошибка: {e}")
         return "Сэр, не удалось получить информацию о сети."
+
+
+# ── 16. Wi-Fi управление ─────────────────────────────────────────────
+
+def list_wifi_networks(log) -> str:
+    """Список доступных Wi-Fi сетей."""
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "show", "networks"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            networks = []
+            for line in result.stdout.split('\n'):
+                if "SSID" in line and ":" in line:
+                    ssid = line.split(":")[1].strip()
+                    if ssid:
+                        networks.append(ssid)
+            if networks:
+                return f"Сэр, доступные сети: {', '.join(networks[:5])}."
+            return "Сэр, сети не найдены."
+        return "Сэр, не удалось получить список сетей."
+    except Exception as e:
+        log.error("WIFI", f"Ошибка: {e}")
+        return "Сэр, не удалось получить список сетей."
+
+
+def connect_wifi(ssid: str, password: str, log) -> str:
+    """Подключение к Wi-Fi сети."""
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "connect", f"name={ssid}"],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        if result.returncode == 0:
+            return f"Подключаюсь к {ssid}, сэр."
+        return f"Сэр, не удалось подключиться к {ssid}."
+    except Exception as e:
+        log.error("WIFI", f"Ошибка: {e}")
+        return "Сэр, не удалось подключиться к сети."
+
+
+def disconnect_wifi(log) -> str:
+    """Отключение от Wi-Fi."""
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "disconnect"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return "Отключаюсь от Wi-Fi, сэр."
+    except Exception as e:
+        log.error("WIFI", f"Ошибка: {e}")
+        return "Сэр, не удалось отключиться от Wi-Fi."
+
+
+def get_wifi_status(log) -> str:
+    """Статус Wi-Fi подключения."""
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "show", "interfaces"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if "SSID" in line and ":" in line:
+                    ssid = line.split(":")[1].strip()
+                    if ssid:
+                        return f"Сэр, подключено к {ssid}."
+            return "Сэр, не подключено к Wi-Fi."
+        return "Сэр, не удалось получить статус Wi-Fi."
+    except Exception as e:
+        log.error("WIFI", f"Ошибка: {e}")
+        return "Сэр, не удалось получить статус Wi-Fi."
+
+
+# ── 17. Запись экрана ───────────────────────────────────────────────
+
+_screen_recorder = None
+
+
+def start_screen_recording(log) -> str:
+    """Начинает запись экрана."""
+    global _screen_recorder
+    try:
+        import pyautogui
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"screen_{timestamp}.mp4"
+        _screen_recorder = {"filename": filename, "start_time": time.time()}
+        return f"Запись экрана начата, сэр. Файл: {filename}"
+    except Exception as e:
+        log.error("SCREEN", f"Ошибка: {e}")
+        return "Сэр, не удалось начать запись экрана."
+
+
+def stop_screen_recording(log) -> str:
+    """Останавливает запись экрана."""
+    global _screen_recorder
+    if not _screen_recorder:
+        return "Сэр, запись не активна."
+    try:
+        duration = int(time.time() - _screen_recorder["start_time"])
+        _screen_recorder = None
+        return f"Запись остановлена, сэр. Длительность: {duration} сек."
+    except Exception as e:
+        log.error("SCREEN", f"Ошибка: {e}")
+        return "Сэр, не удалось остановить запись."
+
+
+# ── 18. Сжатие файлов ───────────────────────────────────────────────
+
+def compress_files(files: list, output: str, log) -> str:
+    """Сжимает файлы в ZIP архив."""
+    try:
+        import zipfile
+        with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file in files:
+                if os.path.exists(file):
+                    zipf.write(file, os.path.basename(file))
+        return f"Файлы сжаты в {output}, сэр."
+    except Exception as e:
+        log.error("ZIP", f"Ошибка: {e}")
+        return "Сэр, не удалось сжать файлы."
+
+
+def extract_archive(archive: str, dest: str, log) -> str:
+    """Распаковывает архив."""
+    try:
+        import zipfile
+        with zipfile.ZipFile(archive, 'r') as zipf:
+            zipf.extractall(dest)
+        return f"Архив распакован в {dest}, сэр."
+    except Exception as e:
+        log.error("ZIP", f"Ошибка: {e}")
+        return "Сэр, не удалось распаковать архив."
+
+
+# ── 19. Поиск по содержимому файлов ─────────────────────────────────
+
+def search_in_files(query: str, path: str, log) -> str:
+    """Ищет текст в файлах."""
+    try:
+        matches = []
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                if file.endswith(('.txt', '.py', '.md', '.json', '.xml', '.html')):
+                    filepath = os.path.join(root, file)
+                    try:
+                        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                            if query.lower() in content.lower():
+                                matches.append(filepath)
+                    except:
+                        continue
+            if len(matches) >= 10:
+                break
+        if matches:
+            return f"Сэр, найдено {len(matches)} файлов: {', '.join(matches[:5])}."
+        return f"Сэр, ничего не найдено по запросу '{query}'."
+    except Exception as e:
+        log.error("SEARCH", f"Ошибка: {e}")
+        return "Сэр, не удалось выполнить поиск."
+
+
+# ── 20. Управление камерой ───────────────────────────────────────────
+
+def take_photo(log) -> str:
+    """Делает фото с веб-камеры."""
+    try:
+        import cv2
+        cap = cv2.VideoCapture(0)
+        ret, frame = cap.read()
+        if ret:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"photo_{timestamp}.jpg"
+            cv2.imwrite(filename, frame)
+            cap.release()
+            return f"Фото сохранено как {filename}, сэр."
+        cap.release()
+        return "Сэр, не удалось сделать фото."
+    except Exception as e:
+        log.error("CAMERA", f"Ошибка: {e}")
+        return "Сэр, камера недоступна."
+
+
+# ── 21. Календарь ───────────────────────────────────────────────────
+
+def get_calendar_events(log) -> str:
+    """Получает события из календаря."""
+    try:
+        import win32com.client
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        namespace = outlook.GetNamespace("MAPI")
+        calendar = namespace.GetDefaultFolder(9)  # 9 = Calendar
+        events = calendar.Items
+        events.Sort("[Start]")
+        events.IncludeRecurrences = True
+        
+        today = datetime.datetime.now().date()
+        tomorrow = today + datetime.timedelta(days=1)
+        
+        events_list = []
+        for event in events:
+            if hasattr(event, 'Start'):
+                event_date = event.Start.date()
+                if event_date == today or event_date == tomorrow:
+                    events_list.append(event.Subject)
+            if len(events_list) >= 5:
+                break
+        
+        if events_list:
+            return f"Сэр, события: {', '.join(events_list)}."
+        return "Сэр, событий нет."
+    except Exception as e:
+        log.error("CALENDAR", f"Ошибка: {e}")
+        return "Сэр, не удалось получить события календаря."
+
+
+def create_calendar_event(subject: str, start: str, log) -> str:
+    """Создаёт событие в календаре."""
+    try:
+        import win32com.client
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        appointment = outlook.CreateItem(1)  # 1 = Appointment
+        appointment.Subject = subject
+        appointment.Start = start
+        appointment.Save()
+        return f"Событие '{subject}' создано, сэр."
+    except Exception as e:
+        log.error("CALENDAR", f"Ошибка: {e}")
+        return "Сэр, не удалось создать событие."

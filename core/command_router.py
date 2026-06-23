@@ -243,6 +243,48 @@ class CommandRouter:
         elif act == "network_info":
             msg = A.get_network_info(self.log)
 
+        # ── Wi-Fi ──────────────────────────────────────────────────────
+        elif act == "list_wifi":
+            msg = A.list_wifi_networks(self.log)
+
+        elif act == "connect_wifi":
+            msg = A.connect_wifi(action.get("ssid", ""), action.get("password", ""), self.log)
+
+        elif act == "disconnect_wifi":
+            msg = A.disconnect_wifi(self.log)
+
+        elif act == "wifi_status":
+            msg = A.get_wifi_status(self.log)
+
+        # ── Screen Recording ───────────────────────────────────────────
+        elif act == "start_recording":
+            msg = A.start_screen_recording(self.log)
+
+        elif act == "stop_recording":
+            msg = A.stop_screen_recording(self.log)
+
+        # ── File Compression ────────────────────────────────────────────
+        elif act == "compress":
+            msg = A.compress_files(action.get("files", []), action.get("output", "archive.zip"), self.log)
+
+        elif act == "extract":
+            msg = A.extract_archive(action.get("archive", ""), action.get("dest", "."), self.log)
+
+        # ── Search in Files ────────────────────────────────────────────
+        elif act == "search_in_files":
+            msg = A.search_in_files(action.get("query", ""), action.get("path", "."), self.log)
+
+        # ── Camera ────────────────────────────────────────────────────
+        elif act == "take_photo":
+            msg = A.take_photo(self.log)
+
+        # ── Calendar ──────────────────────────────────────────────────
+        elif act == "calendar_events":
+            msg = A.get_calendar_events(self.log)
+
+        elif act == "create_event":
+            msg = A.create_calendar_event(action.get("subject", ""), action.get("start", ""), self.log)
+
         elif act == "none":
             return
 

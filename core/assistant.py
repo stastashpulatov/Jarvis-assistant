@@ -44,12 +44,20 @@ class Assistant:
         except Exception:
             self.sound_effects = None
 
-        # Предзагрузка AI для мгновенного ответа
-        self.log.info("INIT", "Предзагрузка AI модели...")
-        try:
-            self.ai.ask("")  # Тестовый запрос для инициализации
-        except:
-            pass
+        # Предзагрузка AI для мгновенного ответа (опционально)
+        if self.cfg.get("jarvis", {}).get("preload_ai", False):
+            self.log.info("INIT", "Предзагрузка AI модели...")
+            try:
+                # Тихий тестовый запрос для инициализации
+                import threading
+                def preload():
+                    try:
+                        self.ai.ask("")
+                    except:
+                        pass
+                threading.Thread(target=preload, daemon=True).start()
+            except:
+                pass
 
         jarvis_cfg = self.cfg.get("jarvis", {})
         self.wakeword        = self.cfg["A"]["wakeword"]

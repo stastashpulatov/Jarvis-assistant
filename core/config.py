@@ -55,6 +55,7 @@ _DEFAULT_CONFIG = {
         "city": "Tashkent",
         "boot_animation": True,
         "proactive": False,
+        "preload_ai": False,  # Отключено из-за ошибок Ollama
         "suggestion_interval": 1200,
         "focus_minutes": 50,
         "break_minutes": 10,

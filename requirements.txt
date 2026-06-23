@@ -37,3 +37,5 @@ pyperclip>=1.8.0
 screen_brightness_control>=0.4.0
 deep_translator>=1.11.0
 yt_dlp>=2023.0.0
+opencv-python>=4.8.0
+pywin32>=306
