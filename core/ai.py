@@ -7,6 +7,8 @@ import json
 import time
 import requests
 import hashlib
+from .memory import get_memory
+from .plugin_loader import init_plugins, generate_prompt_section
 
 
 SYSTEM_PROMPT = """Ты J.A.R.V.I.S. — искусственный интеллект из вселенной «Железного человека».
@@ -146,6 +148,27 @@ class GeminiAI:
         self._cache = {} if cache_enabled else None
         self._cache_max_size = 200  # Увеличен кэш для скорости
         self._init()
+        
+        # Загружаем историю из памяти при старте
+        try:
+            memory = get_memory()
+            recent = memory.get_recent_history(limit=5)
+            if recent:
+                self.history = recent
+                self.log.info("AI", f"Загружено {len(recent)} сообщений из памяти")
+        except Exception as e:
+            self.log.warn("AI", f"Не удалось загрузить историю: {e}")
+        
+        # Инициализируем плагины
+        try:
+            init_plugins()
+            plugin_section = generate_prompt_section()
+            if plugin_section:
+                global SYSTEM_PROMPT
+                SYSTEM_PROMPT += plugin_section
+                self.log.info("AI", "Плагины загружены и добавлены в промпт")
+        except Exception as e:
+            self.log.warn("AI", f"Не удалось загрузить плагины: {e}")
 
     def _init(self):
         if self.provider == "ollama":
@@ -310,10 +333,23 @@ class GeminiAI:
             self.history = self.history[-8:]
 
         url = self.cfg["ollama"]["base_url"].rstrip("/") + "/api/chat"
+        
+        # Добавляем контекст из памяти в системный промпт
+        context = ""
+        try:
+            memory = get_memory()
+            context = memory.get_context_summary()
+        except:
+            pass
+        
+        system_prompt = SYSTEM_PROMPT
+        if context:
+            system_prompt = f"{SYSTEM_PROMPT}\n\n{context}"
+        
         payload = {
             "model": self.cfg["ollama"]["model"],
-            "stream": False,
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + self.history,
+            "stream": True,  # Включаем стриминг для скорости
+            "messages": [{"role": "system", "content": system_prompt}] + self.history,
             "options": {
                 "temperature": float(self.cfg["ollama"]["temperature"]),
                 "num_predict": int(self.cfg["ollama"]["num_predict"]),
@@ -329,16 +365,38 @@ class GeminiAI:
             },
         }
         try:
-            r = requests.post(url, json=payload, timeout=float(self.cfg["ollama"]["timeout"]))
+            r = requests.post(url, json=payload, timeout=float(self.cfg["ollama"]["timeout"]), stream=True)
             r.raise_for_status()
-            reply = r.json().get("message", {}).get("content", "").strip()
-            if not reply:
+            
+            # Собираем полный ответ из стриминга
+            full_reply = ""
+            for line in r.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line)
+                        content = chunk.get("message", {}).get("content", "")
+                        if content:
+                            full_reply += content
+                    except:
+                        continue
+            
+            full_reply = full_reply.strip()
+            if not full_reply:
                 raise RuntimeError("пустой ответ Ollama")
-            self.history.append({"role": "assistant", "content": reply})
+            
+            self.history.append({"role": "assistant", "content": full_reply})
             if len(self.history) > 8:
                 self.history = self.history[-8:]
-            self.log.debug("AI", f"Ollama ответ: {reply[:100]}")
-            result = self._parse(reply)
+            
+            # Сохраняем в память
+            try:
+                memory = get_memory()
+                memory.add_message("assistant", full_reply)
+            except Exception as e:
+                self.log.warn("AI", f"Не удалось сохранить в память: {e}")
+            
+            self.log.debug("AI", f"Ollama ответ: {full_reply[:100]}")
+            result = self._parse(full_reply)
             return result
         except Exception as e:
             self.log.error("AI", f"Ollama ошибка: {e}")

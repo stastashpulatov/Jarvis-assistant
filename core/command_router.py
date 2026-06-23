@@ -5,11 +5,25 @@ from . import actions as A
 class CommandRouter:
     def __init__(self, log):
         self.log = log
+        self._ctx = {
+            "awaiting_confirm": False,
+            "pending_action": None,
+        }
+        self._dangerous_actions = {
+            "shutdown", "restart", "kill_process",
+            "format_disk", "connect_wifi", "delete_file"
+        }
 
     def route_all(self, actions: list[dict], tts) -> None:
         """Выполняет список команд по порядку."""
         for action in actions:
             if action.get("action", "none") != "none":
+                # Проверка на опасные команды
+                if action.get("action") in self._dangerous_actions:
+                    self._ctx["pending_action"] = action
+                    self._ctx["awaiting_confirm"] = True
+                    tts.speak(f"Подтвердите {action.get('action')}, сэр. Скажите «да» или «отмена».")
+                    return
                 self.route(action, tts)
 
     def route(self, action: dict, tts) -> None:
@@ -350,15 +364,29 @@ class CommandRouter:
         # ── Audio Devices ──────────────────────────────────────────
         elif act == "list_audio_devices":
             msg = A.list_audio_devices(self.log)
+        
+        # ── Dangerous System Commands ─────────────────────────────
+        elif act == "shutdown":
+            msg = A.shutdown_computer(self.log)
+        
+        elif act == "restart":
+            msg = A.restart_computer(self.log)
 
         elif act == "none":
             return
-
-        else:
-            self.log.warn("РОУТЕР", f"Неизвестная команда: {act}")
-            msg = f"Сэр, команда «{act}» не поддерживается."
-            tts.speak(msg)
+    
+    def confirm_action(self, confirmed: bool, tts) -> None:
+        """Подтверждает или отменяет опасное действие."""
+        if not self._ctx["awaiting_confirm"]:
+            tts.speak("Нет ожидающего подтверждения, сэр.")
             return
-
-        if msg:
-            tts.speak(msg)
+        
+        self._ctx["awaiting_confirm"] = False
+        
+        if confirmed:
+            action = self._ctx["pending_action"]
+            self._ctx["pending_action"] = None
+            self.route(action, tts)
+        else:
+            self._ctx["pending_action"] = None
+            tts.speak("Команда отменена, сэр.")

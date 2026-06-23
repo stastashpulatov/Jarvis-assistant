@@ -105,6 +105,14 @@ class Assistant:
     def _process(self, user_text: str):
         """Локальный парсер первым — Gemini только для сложных фраз."""
         self.log.you(user_text)
+        
+        # Проверка подтверждения опасных команд
+        if self.router._ctx.get("awaiting_confirm"):
+            if re.search(r"\b(да|yes|ок|подтверждаю|выполняй)\b", user_text.lower()):
+                self.router.confirm_action(True, self.tts)
+            elif re.search(r"\b(нет|no|отмена|отменить|стоп)\b", user_text.lower()):
+                self.router.confirm_action(False, self.tts)
+            return
 
         local = try_parse(user_text, self._ctx)
         if local:

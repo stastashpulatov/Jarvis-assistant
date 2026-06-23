@@ -1896,6 +1896,26 @@ def empty_recycle_bin_full(log) -> str:
         return "Сэр, не удалось очистить корзину."
 
 
+def shutdown_computer(log) -> str:
+    """Выключает компьютер."""
+    try:
+        os.system("shutdown /s /t 0")
+        return "Выключаю систему, сэр."
+    except Exception as e:
+        log.error("SYSTEM", f"Ошибка: {e}")
+        return "Сэр, не удалось выключить систему."
+
+
+def restart_computer(log) -> str:
+    """Перезагружает компьютер."""
+    try:
+        os.system("shutdown /r /t 0")
+        return "Перезагружаю систему, сэр."
+    except Exception as e:
+        log.error("SYSTEM", f"Ошибка: {e}")
+        return "Сэр, не удалось перезагрузить систему."
+
+
 # ── 29. Режимы питания ───────────────────────────────────────────
 
 def sleep_mode(log) -> str:

@@ -42,6 +42,7 @@ _DEFAULT_CONFIG = {
         "num_predict": 80,  # Уменьшено для скорости
         "temperature": 0.7,
         "timeout": 10,  # Уменьшено для скорости
+        "stream": True,  # Стриминг для мгновенных ответов
     },
     "logging": {
         "enabled": True,
@@ -58,6 +59,9 @@ _DEFAULT_CONFIG = {
         "break_minutes": 10,
         "cache_enabled": True,
         "performance_monitoring": False,
+        "enable_tray": True,  # Системный трей
+        "enable_telegram": False,  # Telegram-бот
+        "telegram_token": "",  # Токен бота
     },
 }
 
