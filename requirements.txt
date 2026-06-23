@@ -39,3 +39,6 @@ deep_translator>=1.11.0
 yt_dlp>=2023.0.0
 opencv-python>=4.8.0
 pywin32>=306
+pyautogui>=0.9.54
+pytesseract>=0.3.10
+pyaudio>=0.2.14

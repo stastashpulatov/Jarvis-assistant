@@ -1613,3 +1613,325 @@ def create_calendar_event(subject: str, start: str, log) -> str:
     except Exception as e:
         log.error("CALENDAR", f"Ошибка: {e}")
         return "Сэр, не удалось создать событие."
+
+
+# ── 22. Bluetooth управление ─────────────────────────────────────────
+
+def list_bluetooth_devices(log) -> str:
+    """Список Bluetooth устройств."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Get-PnpDevice -Class Bluetooth"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            devices = []
+            for line in result.stdout.split('\n'):
+                if line.strip() and "Bluetooth" in line:
+                    devices.append(line.strip()[:50])
+            if devices:
+                return f"Сэр, Bluetooth устройства: {', '.join(devices[:5])}."
+            return "Сэр, Bluetooth устройства не найдены."
+        return "Сэр, не удалось получить список Bluetooth."
+    except Exception as e:
+        log.error("BLUETOOTH", f"Ошибка: {e}")
+        return "Сэр, не удалось получить список Bluetooth."
+
+
+def enable_bluetooth(log) -> str:
+    """Включает Bluetooth."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Enable-NetAdapter -Name 'Bluetooth' -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return "Включаю Bluetooth, сэр."
+    except Exception as e:
+        log.error("BLUETOOTH", f"Ошибка: {e}")
+        return "Сэр, не удалось включить Bluetooth."
+
+
+def disable_bluetooth(log) -> str:
+    """Выключает Bluetooth."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Disable-NetAdapter -Name 'Bluetooth' -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return "Выключаю Bluetooth, сэр."
+    except Exception as e:
+        log.error("BLUETOOTH", f"Ошибка: {e}")
+        return "Сэр, не удалось выключить Bluetooth."
+
+
+# ── 23. Управление мониторами ───────────────────────────────────────
+
+def extend_display(log) -> str:
+    """Расширяет экран на второй монитор."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "DisplaySwitch.exe /extend"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return "Расширяю экран на второй монитор, сэр."
+    except Exception as e:
+        log.error("DISPLAY", f"Ошибка: {e}")
+        return "Сэр, не удалось расширить экран."
+
+
+def duplicate_display(log) -> str:
+    """Дублирует экран на второй монитор."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "DisplaySwitch.exe /duplicate"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return "Дублирую экран, сэр."
+    except Exception as e:
+        log.error("DISPLAY", f"Ошибка: {e}")
+        return "Сэр, не удалось дублировать экран."
+
+
+def set_primary_display(log) -> str:
+    """Устанавливает основной монитор."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "DisplaySwitch.exe /internal"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return "Устанавливаю этот монитор как основной, сэр."
+    except Exception as e:
+        log.error("DISPLAY", f"Ошибка: {e}")
+        return "Сэр, не удалось установить основной монитор."
+
+
+# ── 24. Ввод текста с клавиатуры ─────────────────────────────────────
+
+def type_text(text: str, log) -> str:
+    """Вводит текст с клавиатуры."""
+    try:
+        import pyautogui
+        pyautogui.write(text, interval=0.01)
+        return f"Ввожу текст, сэр."
+    except Exception as e:
+        log.error("KEYBOARD", f"Ошибка: {e}")
+        return "Сэр, не удалось ввести текст."
+
+
+def press_key(key: str, log) -> str:
+    """Нажимает клавишу или комбинацию."""
+    try:
+        import pyautogui
+        # Очищаем ключ от лишних слов
+        key = key.strip().lower()
+        # Заменяем русские слова на английские
+        key_map = {
+            'win': 'win', 'windows': 'win',
+            'ctrl': 'ctrl', 'control': 'ctrl',
+            'alt': 'alt', 'shift': 'shift',
+            'enter': 'enter', 'ввод': 'enter',
+            'escape': 'esc', 'esc': 'esc',
+            'space': 'space', 'пробел': 'space',
+            'tab': 'tab', 'таб': 'tab',
+            'delete': 'delete', 'del': 'del',
+            'backspace': 'backspace', 'bs': 'backspace',
+            'f1': 'f1', 'f2': 'f2', 'f3': 'f3', 'f4': 'f4',
+            'f5': 'f5', 'f6': 'f6', 'f7': 'f7', 'f8': 'f8',
+            'f9': 'f9', 'f10': 'f10', 'f11': 'f11', 'f12': 'f12',
+        }
+        # Заменяем русские названия
+        for ru, en in key_map.items():
+            key = key.replace(ru, en)
+        # Заменяем "плюс" на "+"
+        key = key.replace('плюс', '+').replace('plus', '+')
+        pyautogui.press(key)
+        return f"Нажимаю {key}, сэр."
+    except Exception as e:
+        log.error("KEYBOARD", f"Ошибка: {e}")
+        return f"Сэр, не удалось нажать {key}."
+
+
+# ── 25. OCR распознавание текста ────────────────────────────────────
+
+def ocr_screenshot(log) -> str:
+    """Распознаёт текст с экрана."""
+    try:
+        import pyautogui
+        try:
+            import pytesseract
+        except ImportError:
+            return "Сэр, Tesseract не установлен. Установите: pip install pytesseract"
+        screenshot = pyautogui.screenshot()
+        text = pytesseract.image_to_string(screenshot, lang='rus+eng')
+        if text.strip():
+            return f"Распознанный текст: {text[:200]}, сэр."
+        return "Сэр, текст не распознан."
+    except Exception as e:
+        log.error("OCR", f"Ошибка: {e}")
+        return "Сэр, не удалось распознать текст. Убедитесь что Tesseract установлен."
+
+
+# ── 26. Управление файлами (перемещение, переименование) ─────────────
+
+def move_file(src: str, dst: str, log) -> str:
+    """Перемещает файл."""
+    try:
+        import shutil
+        if not os.path.exists(src):
+            return f"Сэр, файл {src} не существует."
+        shutil.move(src, dst)
+        return f"Файл перемещён в {dst}, сэр."
+    except Exception as e:
+        log.error("FILES", f"Ошибка: {e}")
+        return "Сэр, не удалось переместить файл."
+
+
+def rename_file(old: str, new: str, log) -> str:
+    """Переименовывает файл."""
+    try:
+        if not os.path.exists(old):
+            return f"Сэр, файл {old} не существует."
+        os.rename(old, new)
+        return f"Файл переименован в {new}, сэр."
+    except Exception as e:
+        log.error("FILES", f"Ошибка: {e}")
+        return "Сэр, не удалось переименовать файл."
+
+
+# ── 27. Службы Windows ─────────────────────────────────────────────
+
+def list_services(log) -> str:
+    """Список служб."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Get-Service | Where-Object {$_.Status -eq 'Running'} | Select-Object -First 10 Name, Status"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            return f"Сэр, запущенные службы: {result.stdout[:300]}."
+        return "Сэр, не удалось получить список служб."
+    except Exception as e:
+        log.error("SERVICES", f"Ошибка: {e}")
+        return "Сэр, не удалось получить список служб."
+
+
+def start_service(name: str, log) -> str:
+    """Запускает службу."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", f"Start-Service -Name '{name}' -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        return f"Запускаю службу {name}, сэр."
+    except Exception as e:
+        log.error("SERVICES", f"Ошибка: {e}")
+        return f"Сэр, не удалось запустить службу {name}."
+
+
+def stop_service(name: str, log) -> str:
+    """Останавливает службу."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", f"Stop-Service -Name '{name}' -Force -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        return f"Останавливаю службу {name}, сэр."
+    except Exception as e:
+        log.error("SERVICES", f"Ошибка: {e}")
+        return f"Сэр, не удалось остановить службу {name}."
+
+
+# ── 28. Очистка диска ───────────────────────────────────────────────
+
+def clean_temp_files(log) -> str:
+    """Очищает временные файлы."""
+    try:
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        cleaned = 0
+        for item in os.listdir(temp_dir):
+            try:
+                item_path = os.path.join(temp_dir, item)
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                    cleaned += 1
+            except:
+                continue
+        return f"Очищено {cleaned} временных файлов, сэр."
+    except Exception as e:
+        log.error("DISK", f"Ошибка: {e}")
+        return "Сэр, не удалось очистить временные файлы."
+
+
+def empty_recycle_bin_full(log) -> str:
+    """Полностью очищает корзину."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        return "Корзина полностью очищена, сэр."
+    except Exception as e:
+        log.error("DISK", f"Ошибка: {e}")
+        return "Сэр, не удалось очистить корзину."
+
+
+# ── 29. Режимы питания ───────────────────────────────────────────
+
+def sleep_mode(log) -> str:
+    """Переводит в спящий режим."""
+    try:
+        os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+        return "Перевожу в спящий режим, сэр."
+    except Exception as e:
+        log.error("POWER", f"Ошибка: {e}")
+        return "Сэр, не удалось перевести в спящий режим."
+
+
+def hibernate_mode(log) -> str:
+    """Переводит в гибернацию."""
+    try:
+        os.system("shutdown /h")
+        return "Перевожу в гибернацию, сэр."
+    except Exception as e:
+        log.error("POWER", f"Ошибка: {e}")
+        return "Сэр, не удалось перевести в гибернацию."
+
+
+# ── 30. Управление аудио устройствами ───────────────────────────────
+
+def list_audio_devices(log) -> str:
+    """Список аудио устройств."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Get-AudioDevice -List | Select-Object -First 5 Name"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return f"Сэр, аудио устройства: {result.stdout[:200]}."
+        return "Сэр, аудио устройства не найдены."
+    except Exception as e:
+        log.error("AUDIO", f"Ошибка: {e}")
+        return "Сэр, не удалось получить список аудио устройств."

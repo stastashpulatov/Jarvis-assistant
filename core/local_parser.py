@@ -390,28 +390,16 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
         ]
 
     # ── Составные команды: открыть приложение + создать заметку ─────
+    # Очень гибкий паттерн для любых сложных фраз с "напиши/запиши/впиши"
     compound_app_note = re.search(
-        r"(?:открой|запусти|open|launch)\s+(.+?)\s+(?:и|and)\s+(?:напиши|создай|запиши|write|create)\s+(?:там|в нём|в ней|there|in it)\s+(.+)$",
+        r"(?:открой|запусти|open|launch)\s+(\S+?).+?(?:напиши|запиши|впиши|write)\s+(.+)$",
         raw, re.I
     )
     if compound_app_note:
         app_name = compound_app_note.group(1).strip()
         note_text = compound_app_note.group(2).strip()
-        internal = _resolve_app(app_name)
-        label = app_name if app_name != internal else internal
-        return f"Открываю {label} и создаю заметку, сэр.", [
-            {"action": "open_app", "target": internal},
-            {"action": "create_note", "text": note_text}
-        ]
-
-    # ── Составные команды: открыть приложение + текст (простой вариант) ─
-    compound_simple = re.search(
-        r"(?:открой|запусти|open|launch)\s+(.+?)\s+(?:и|and)\s+(?:напиши|запиши|write)\s+(.+)$",
-        raw, re.I
-    )
-    if compound_simple:
-        app_name = compound_simple.group(1).strip()
-        note_text = compound_simple.group(2).strip()
+        # Очищаем текст от лишних слов
+        note_text = re.sub(r'^(?:там|в нём|в ней|в нем|there|in it)\s+', '', note_text, flags=re.I)
         internal = _resolve_app(app_name)
         label = app_name if app_name != internal else internal
         return f"Открываю {label} и создаю заметку, сэр.", [
@@ -602,5 +590,78 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
         m = re.search(r"\b(создай событие|create event)\s+(.+)$", raw, re.I)
         if m:
             return "", [{"action": "create_event", "subject": m.group(2).strip(), "start": ""}]
+
+    # ── Bluetooth ───────────────────────────────────────────────
+    if re.search(r"\b(список bluetooth|bluetooth устройства|list bluetooth)\b", t):
+        return "", [{"action": "list_bluetooth"}]
+    if re.search(r"\b(включи bluetooth|enable bluetooth)\b", t):
+        return "", [{"action": "enable_bluetooth"}]
+    if re.search(r"\b(выключи bluetooth|disable bluetooth)\b", t):
+        return "", [{"action": "disable_bluetooth"}]
+
+    # ── Display ─────────────────────────────────────────────────
+    if re.search(r"\b(расширь экран|extend display|второй монитор)\b", t):
+        return "", [{"action": "extend_display"}]
+    if re.search(r"\b(дублируй экран|duplicate display)\b", t):
+        return "", [{"action": "duplicate_display"}]
+    if re.search(r"\b(основной монитор|primary display|set primary)\b", t):
+        return "", [{"action": "set_primary_display"}]
+
+    # ── Keyboard ────────────────────────────────────────────────
+    if re.search(r"\b(напиши|введи|type)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(напиши|введи|type)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "type_text", "text": m.group(2).strip()}]
+    if re.search(r"\b(нажми|press)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(нажми|press)\s+(.+)$", raw, re.I)
+        if m:
+            key = m.group(2).strip()
+            # Очищаем от лишних слов "клавишу"
+            key = re.sub(r'^(?:клавишу|key)\s+', '', key, flags=re.I)
+            # Заменяем русские названия на английские для pyautogui
+            key = key.replace('плюс', '+').replace('плюс', '+')
+            return "", [{"action": "press_key", "key": key}]
+
+    # ── OCR ───────────────────────────────────────────────────
+    if re.search(r"\b(распознай текст|ocr|recognize text)\b", t):
+        return "", [{"action": "ocr_screenshot"}]
+
+    # ── File Operations ─────────────────────────────────────────
+    if re.search(r"\b(перемести|move)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(перемести|move)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "move_file", "src": m.group(2).strip(), "dst": m.group(3).strip()}]
+    if re.search(r"\b(переименуй|rename)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(переименуй|rename)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "rename_file", "old": m.group(2).strip(), "new": m.group(3).strip()}]
+
+    # ── Services ───────────────────────────────────────────────
+    if re.search(r"\b(список служб|list services)\b", t):
+        return "", [{"action": "list_services"}]
+    if re.search(r"\b(запусти службу|start service)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(запусти службу|start service)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "start_service", "name": m.group(2).strip()}]
+    if re.search(r"\b(останови службу|stop service)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(останови службу|stop service)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "stop_service", "name": m.group(2).strip()}]
+
+    # ── Disk Cleanup ────────────────────────────────────────────
+    if re.search(r"\b(очисти временные|clean temp|temp files)\b", t):
+        return "", [{"action": "clean_temp"}]
+    if re.search(r"\b(полностью очисти корзину|empty recycle full)\b", t):
+        return "", [{"action": "empty_recycle_full"}]
+
+    # ── Power Modes ────────────────────────────────────────────
+    if re.search(r"\b(спящий режим|sleep mode|сон)\b", t):
+        return "", [{"action": "sleep_mode"}]
+    if re.search(r"\b(гибернация|hibernate)\b", t):
+        return "", [{"action": "hibernate_mode"}]
+
+    # ── Audio Devices ──────────────────────────────────────────
+    if re.search(r"\b(список аудио|audio devices|звуковые устройства)\b", t):
+        return "", [{"action": "list_audio_devices"}]
 
     return None

@@ -74,6 +74,25 @@ Just A Rather Very Intelligent System. Управляешь компьютеро
 {"action": "take_photo"}
 {"action": "calendar_events"}
 {"action": "create_event", "subject": "...", "start": "2024-01-01 10:00"}
+{"action": "list_bluetooth"}
+{"action": "enable_bluetooth"}
+{"action": "disable_bluetooth"}
+{"action": "extend_display"}
+{"action": "duplicate_display"}
+{"action": "set_primary_display"}
+{"action": "type_text", "text": "..."}
+{"action": "press_key", "key": "enter"}
+{"action": "ocr_screenshot"}
+{"action": "move_file", "src": "...", "dst": "..."}
+{"action": "rename_file", "old": "...", "new": "..."}
+{"action": "list_services"}
+{"action": "start_service", "name": "..."}
+{"action": "stop_service", "name": "..."}
+{"action": "clean_temp"}
+{"action": "empty_recycle_full"}
+{"action": "sleep_mode"}
+{"action": "hibernate_mode"}
+{"action": "list_audio_devices"}
 {"action": "none"}
 
 ПРОТОКОЛЫ (скажи пользователю что активируешь):

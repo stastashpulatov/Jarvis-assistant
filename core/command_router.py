@@ -285,6 +285,72 @@ class CommandRouter:
         elif act == "create_event":
             msg = A.create_calendar_event(action.get("subject", ""), action.get("start", ""), self.log)
 
+        # ── Bluetooth ───────────────────────────────────────────────
+        elif act == "list_bluetooth":
+            msg = A.list_bluetooth_devices(self.log)
+
+        elif act == "enable_bluetooth":
+            msg = A.enable_bluetooth(self.log)
+
+        elif act == "disable_bluetooth":
+            msg = A.disable_bluetooth(self.log)
+
+        # ── Display ─────────────────────────────────────────────────
+        elif act == "extend_display":
+            msg = A.extend_display(self.log)
+
+        elif act == "duplicate_display":
+            msg = A.duplicate_display(self.log)
+
+        elif act == "set_primary_display":
+            msg = A.set_primary_display(self.log)
+
+        # ── Keyboard ────────────────────────────────────────────────
+        elif act == "type_text":
+            msg = A.type_text(action.get("text", ""), self.log)
+
+        elif act == "press_key":
+            msg = A.press_key(action.get("key", ""), self.log)
+
+        # ── OCR ───────────────────────────────────────────────────
+        elif act == "ocr_screenshot":
+            msg = A.ocr_screenshot(self.log)
+
+        # ── File Operations ─────────────────────────────────────────
+        elif act == "move_file":
+            msg = A.move_file(action.get("src", ""), action.get("dst", ""), self.log)
+
+        elif act == "rename_file":
+            msg = A.rename_file(action.get("old", ""), action.get("new", ""), self.log)
+
+        # ── Services ───────────────────────────────────────────────
+        elif act == "list_services":
+            msg = A.list_services(self.log)
+
+        elif act == "start_service":
+            msg = A.start_service(action.get("name", ""), self.log)
+
+        elif act == "stop_service":
+            msg = A.stop_service(action.get("name", ""), self.log)
+
+        # ── Disk Cleanup ────────────────────────────────────────────
+        elif act == "clean_temp":
+            msg = A.clean_temp_files(self.log)
+
+        elif act == "empty_recycle_full":
+            msg = A.empty_recycle_bin_full(self.log)
+
+        # ── Power Modes ────────────────────────────────────────────
+        elif act == "sleep_mode":
+            msg = A.sleep_mode(self.log)
+
+        elif act == "hibernate_mode":
+            msg = A.hibernate_mode(self.log)
+
+        # ── Audio Devices ──────────────────────────────────────────
+        elif act == "list_audio_devices":
+            msg = A.list_audio_devices(self.log)
+
         elif act == "none":
             return
 
