@@ -5,14 +5,14 @@
 A:
   name: "J.A.R.V.I.S."
   wakeword: "джарвис"
-  command_timeout: 12
+  command_timeout: 8
   idle_timeout: 90
   always_on: true
 
 audio:
-  silence_timeout: 0.5
+  silence_timeout: 0.4
   energy_threshold: 300
-  phrase_limit: 10
+  phrase_limit: 2
 
 voice:
   # silero  — нейросеть, русский язык, CUDA (рекомендуется)
@@ -59,4 +59,5 @@ jarvis:
   proactive: false
   suggestion_interval: 1200
   focus_minutes: 50
+  break_minutes: 10
   break_minutes: 10

@@ -37,12 +37,12 @@ _DEFAULT_CONFIG = {
     },
     "ollama": {
         "base_url": "http://127.0.0.1:11434",
-        "model": "qwen2.5:7b-instruct",
+        "model": "qwen2.5:3b-instruct",  # 3b модель как основная для стабильности
         "fallback_model": "qwen2.5:3b-instruct",
-        "num_predict": 60,  # Ещё меньше для скорости
+        "num_predict": 60,
         "temperature": 0.7,
-        "timeout": 15,  # Увеличен для стабильности
-        "stream": True,  # Стриминг для мгновенных ответов
+        "timeout": 15,
+        "stream": False,
     },
     "logging": {
         "enabled": True,

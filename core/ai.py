@@ -348,65 +348,88 @@ class GeminiAI:
         
         payload = {
             "model": self.cfg["ollama"]["model"],
-            "stream": True,  # Включаем стриминг для скорости
+            "stream": self.cfg["ollama"].get("stream", False),  # Из конфига для стабильности
             "messages": [{"role": "system", "content": system_prompt}] + self.history,
             "options": {
                 "temperature": float(self.cfg["ollama"]["temperature"]),
                 "num_predict": int(self.cfg["ollama"]["num_predict"]),
-                "num_ctx": 256,  # Минимальный контекст для максимальной скорости
+                "num_ctx": 512,  # Безопасный контекст
                 "num_thread": 4,  # Многопоточность
                 "use_mmap": True,  # Маппинг памяти для скорости
                 "num_gpu": 1,  # Использование GPU
-                "num_batch": 1,  # Оптимизация батчинга
+                "num_batch": 512,  # Безопасный batch size
                 "repeat_last_n": 0,  # Отключаем повторения для скорости
                 "repeat_penalty": 1.1,  # Штраф за повторения
-                "top_k": 10,  # Ещё агрессивнее выборка
-                "top_p": 0.8,  # Ещё агрессивнее выборка
+                "top_k": 20,  # Безопасная выборка
+                "top_p": 0.9,  # Безопасная выборка
             },
         }
-        try:
-            r = requests.post(url, json=payload, timeout=float(self.cfg["ollama"]["timeout"]), stream=True)
-            r.raise_for_status()
-            
-            # Собираем полный ответ из стриминга
-            full_reply = ""
-            for line in r.iter_lines():
-                if line:
-                    try:
-                        chunk = json.loads(line)
-                        content = chunk.get("message", {}).get("content", "")
-                        if content:
-                            full_reply += content
-                    except:
-                        continue
-            
-            full_reply = full_reply.strip()
-            if not full_reply:
-                raise RuntimeError("пустой ответ Ollama")
-            
-            self.history.append({"role": "assistant", "content": full_reply})
-            if len(self.history) > 8:
-                self.history = self.history[-8:]
-            
-            # Сохраняем в память
+        
+        # Retry логика для Ollama
+        max_retries = 2
+        use_stream = payload.get("stream", False)
+        
+        for attempt in range(max_retries):
             try:
-                memory = get_memory()
-                memory.add_message("assistant", full_reply)
+                r = requests.post(url, json=payload, timeout=float(self.cfg["ollama"]["timeout"]), stream=use_stream)
+                r.raise_for_status()
+                
+                # Собираем полный ответ
+                if use_stream:
+                    full_reply = ""
+                    for line in r.iter_lines():
+                        if line:
+                            try:
+                                chunk = json.loads(line)
+                                content = chunk.get("message", {}).get("content", "")
+                                if content:
+                                    full_reply += content
+                            except:
+                                continue
+                else:
+                    data = r.json()
+                    full_reply = data.get("message", {}).get("content", "")
+                
+                full_reply = full_reply.strip()
+                if not full_reply:
+                    raise RuntimeError("пустой ответ Ollama")
+                
+                self.history.append({"role": "assistant", "content": full_reply})
+                if len(self.history) > 8:
+                    self.history = self.history[-8:]
+                
+                # Сохраняем в память
+                try:
+                    memory = get_memory()
+                    memory.add_message("assistant", full_reply)
+                except Exception as e:
+                    self.log.warn("AI", f"Не удалось сохранить в память: {e}")
+                
+                self.log.debug("AI", f"Ollama ответ: {full_reply[:100]}")
+                result = self._parse(full_reply)
+                return result
+            except requests.exceptions.HTTPError as e:
+                self.log.error("AI", f"Ollama HTTP ошибка (попытка {attempt + 1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    # Последняя попытка не удалась - переключаемся на fallback
+                    break
+                time.sleep(1)  # Пауза перед retry
             except Exception as e:
-                self.log.warn("AI", f"Не удалось сохранить в память: {e}")
-            
-            self.log.debug("AI", f"Ollama ответ: {full_reply[:100]}")
-            result = self._parse(full_reply)
-            return result
-        except Exception as e:
-            self.log.error("AI", f"Ollama ошибка: {e}")
-            if self.history and self.history[-1]["role"] == "user":
-                self.history.pop()
-            if self.fallback_provider == "gemini" and self.client is not None:
-                self.active_provider = "gemini"
-                self.log.warn("AI", "Переключаюсь на Gemini как резерв.")
-                return self.ask(user_text)
-            return "Сэр, Ollama сейчас недоступна. Локальные команды продолжают работать.", []
+                self.log.error("AI", f"Ollama ошибка (попытка {attempt + 1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    break
+                time.sleep(1)
+        
+        # Все попытки не удались - переключаемся на fallback
+        if self.history and self.history[-1]["role"] == "user":
+            self.history.pop()
+        
+        if self.fallback_provider == "gemini" and self.client is not None:
+            self.active_provider = "gemini"
+            self.log.warn("AI", "Переключаюсь на Gemini как резерв.")
+            return self.ask(user_text)
+        
+        return "Сэр, Ollama сейчас недоступна. Локальные команды продолжают работать.", []
 
     def _parse(self, full_text: str) -> tuple:
         speech = full_text
