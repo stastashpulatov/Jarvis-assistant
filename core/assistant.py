@@ -203,6 +203,7 @@ class Assistant:
                                 self.speak(activation_line())
                     else:
                         last_suggestion_t = self._maybe_suggest(active, last_suggestion_t)
+                        # Отключаем idle_timeout если always_on активен
                         if not self.always_on and time.time() - last_active_t > self.idle_timeout:
                             active = False
                             self.speak(standby_line())
