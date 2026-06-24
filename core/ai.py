@@ -133,7 +133,7 @@ spotify, discord, telegram, steam, vlc, nvidia, epicgames, obs и др.
 """
 
 
-class GeminiAI:
+class AIEngine:
     def __init__(self, cfg: dict, log):
         self.cfg     = cfg
         self.log     = log

@@ -313,7 +313,7 @@ class TTSEngine:
 
     # ── speak ────────────────────────────────────────────────────
 
-    def speak(self, text: str):
+    def speak(self, text: str, stream: bool = False):
         if not text or not text.strip():
             return
         with self._lock:

@@ -3,6 +3,7 @@
 Связывает STT → wake word → AI → TTS → CommandRouter.
 """
 import time
+import re
 
 from .config         import load_config
 from .logger         import Logger
@@ -29,7 +30,7 @@ class Assistant:
 
         self.tts    = TTSEngine(self.cfg, self.log)
         self.stt    = STTEngine(self.cfg, self.log)
-        self.ai     = GeminiAI(self.cfg, self.log)
+        self.ai     = AIEngine(self.cfg, self.log)
         self.router = CommandRouter(self.log)
 
         # Запускаем поток напоминаний
@@ -125,7 +126,13 @@ class Assistant:
                     self._ctx["awaiting_volume"] = True
 
         if speech:
-            self.speak(speech)
+            # Streaming TTS: разбиваем на предложения и озвучиваем по очереди
+            sentences = re.split(r'(?<=[.!?])\s+', speech)
+            if sentences:
+                self.speak(sentences[0])
+                for sent in sentences[1:]:
+                    if sent.strip():
+                        self.speak(sent)
 
         if actions:
             # Выполняем действия асинхронно для скорости

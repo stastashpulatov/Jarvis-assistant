@@ -1,6 +1,7 @@
 # Core AI
 google-genai>=1.0.0
 requests>=2.30.0
+python-dotenv>=1.0.0
 
 # Speech Recognition
 SpeechRecognition>=3.10.0

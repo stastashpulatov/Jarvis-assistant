@@ -2,6 +2,8 @@
 import copy
 import os
 import yaml
+from dotenv import load_dotenv
+load_dotenv()
 
 _DEFAULT_CONFIG = {
     "A": {
@@ -87,4 +89,8 @@ def load_config(path: str = "config.yaml") -> dict:
             print(f"[КОНФИГ] Ошибка чтения config.yaml: {e}. Использую настройки по умолчанию.")
     else:
         print("[КОНФИГ] config.yaml не найден, использую настройки по умолчанию.")
+    
+    if os.getenv("GEMINI_API_KEY"):
+        cfg["gemini"]["api_key"] = os.getenv("GEMINI_API_KEY")
+    
     return cfg

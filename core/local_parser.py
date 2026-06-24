@@ -119,6 +119,371 @@ def _resolve_app(name: str) -> str:
     return key
 
 
+@lru_cache(maxsize=256)
+def _try_parse_simple(text: str) -> tuple[str, list[dict]] | None:
+    """
+    Кэшируемый парсер для простых команд без контекстной зависимости.
+    Возвращает (speech, actions) или None если команда требует контекста или не распознана.
+    """
+    raw = text.strip()
+    if not raw:
+        return None
+    
+    t = _normalize(raw)
+    
+    # ── Протоколы (режимы из фильма) ──────────────────────────────
+    proto = match_protocol(raw)
+    if proto:
+        return proto
+    
+    # ── Кто ты / JARVIS ───────────────────────────────────────────
+    if re.search(r"\b(кто ты|что ты|who are you|представься|ты jarvis|ты джарвис)\b", t):
+        from .personality import identity_line
+        return identity_line(), [{"action": "none"}]
+    
+    # ── Быстрая помощь и предложения ─────────────────────────────
+    if re.search(r"\b(что умеешь|что ты умеешь|помощь|help|команды|что можешь)\b", t):
+        from .personality import quick_help_line
+        return quick_help_line(), [{"action": "none"}]
+    
+    if re.search(r"\b(что предложишь|предложи|совет|идея|чем займемся|чем займёмся)\b", t):
+        from .personality import proactive_line
+        return proactive_line(), [{"action": "none"}]
+    
+    if re.search(r"\b(перерыв|отдохнуть|устал|устала|break)\b", t):
+        return (
+            "Сэр, предлагаю десять минут перерыва: вода, разминка плеч и отдых для глаз. "
+            "Когда вернётесь, скажите «рабочий режим».",
+            [{"action": "none"}],
+        )
+    
+    # ── Заметки ───────────────────────────────────────────────────
+    m = NOTE_RE.match(raw)
+    if m:
+        return "", [{"action": "create_note", "text": m.group(1).strip()}]
+    
+    # ── Таймеры ───────────────────────────────────────────────────
+    timer = _match_timer(raw)
+    if timer:
+        seconds, message = timer
+        return "", [{"action": "timer", "seconds": seconds, "message": message}]
+    
+    # ── Диагностика ───────────────────────────────────────────────
+    if re.search(r"\b(диагностик\w*|diagnostic\w*|сканирован\w*|проверь (?:все )?систем\w*)\b", t):
+        return "Запускаю диагностику, сэр.", [{"action": "diagnostics"}]
+    
+    # ── Батарея ───────────────────────────────────────────────────
+    if re.search(r"\b(батаре|заряд|battery|аккумулятор)\b", t):
+        return "", [{"action": "battery"}]
+    
+    # ── Рабочий стол ──────────────────────────────────────────────
+    if re.search(r"\b(покажи рабочий стол|сверни (?:все )?окн|show desktop|минимизируй)\b", t):
+        return "", [{"action": "show_desktop"}]
+    
+    m = FOLDER_RE.match(raw)
+    if m:
+        return "", [{"action": "open_folder", "target": m.group(1).strip()}]
+    
+    # ── Очистить корзину ──────────────────────────────────────────
+    if re.search(r"\b(очисти корзин|empty trash|пуст.*корзин)\b", t):
+        return "Очищаю корзину, сэр.", [{"action": "empty_trash"}]
+    
+    # ── Текущая громкость ─────────────────────────────────────────
+    if re.search(r"\b(какая громкость|какой звук|сколько громк|уровень звук|volume level|how loud)\b", t):
+        return "", [{"action": "volume_get"}]
+    
+    # ── Громкость up/down/mute ────────────────────────────────────
+    if re.search(r"\b(громче|погромче|volume up|увелич.*громк)\b", t) and not re.search(r"\d", t):
+        return "", [{"action": "volume_up"}]
+    if re.search(r"\b(тише|потише|volume down)\b", t) and not re.search(r"\d", t):
+        return "", [{"action": "volume_down"}]
+    if re.search(r"\b(без звука|заглуш|mute|выключ.*звук)\b", t):
+        return "", [{"action": "volume_mute"}]
+    
+    # ── Медиа ────────────────────────────────────────────────────
+    if re.search(r"\b(пауза|play pause|play|pause|продолжи|останови музыку|поставь на паузу)\b", t):
+        return "", [{"action": "media_play_pause"}]
+    if re.search(r"\b(следующий трек|следующая песня|next track|next song|дальше)\b", t):
+        return "", [{"action": "media_next"}]
+    if re.search(r"\b(предыдущий трек|предыдущая песня|previous track|prev song|назад трек)\b", t):
+        return "", [{"action": "media_previous"}]
+    
+    # ── Время / система ───────────────────────────────────────────
+    if re.search(r"\b(который час|какое время|сколько времени|what time)\b", t):
+        return "", [{"action": "show_time"}]
+    if re.search(r"\b(система|system info|нагрузка|cpu|память)\b", t) and "открой" not in t:
+        return "", [{"action": "system_info"}]
+    if re.search(r"\b(скриншот|screenshot|снимок экрана)\b", t):
+        return "", [{"action": "screenshot"}]
+    
+    # ── Блокировка ───────────────────────────────────────────────
+    if re.search(r"\b(заблокиру|lock|блокиров.*экран)\b", t):
+        return "Блокирую компьютер, сэр.", [{"action": "lock"}]
+    
+    # ── Поиск ─────────────────────────────────────────────────────
+    m = SEARCH_RE.match(raw)
+    if m:
+        q = m.group(1).strip()
+        return f"Ищу «{q}», сэр.", [{"action": "search_web", "query": q}]
+    
+    # ── Закрыть приложение ────────────────────────────────────────
+    m = CLOSE_RE.match(raw)
+    if m:
+        target = _resolve_app(m.group(1).strip())
+        return f"Закрываю {target}, сэр.", [{"action": "close_app", "target": target}]
+    
+    # ── Открыть приложение ────────────────────────────────────────
+    app_match = _match_app_open(raw)
+    if app_match:
+        internal, spoken = app_match
+        label = spoken if spoken != internal else internal
+        return f"Запускаю {label}, сэр.", [{"action": "open_app", "target": internal}]
+    
+    # ── Буфер обмена ────────────────────────────────────────────
+    if re.search(r"\b(что в буфере|прочитай буфер|clipboard read)\b", t):
+        return "", [{"action": "clipboard_read"}]
+    if re.search(r"\b(скопируй|copy to clipboard)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(скопируй|copy to clipboard)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "clipboard_copy", "text": m.group(2).strip()}]
+    if re.search(r"\b(очисти буфер|clear clipboard)\b", t):
+        return "Очищаю буфер обмена, сэр.", [{"action": "clipboard_clear"}]
+    
+    # ── Процессы ─────────────────────────────────────────────────
+    if re.search(r"\b(топ процессов|процессы|processes|загрузка процесс)\b", t):
+        return "", [{"action": "get_top_processes"}]
+    if re.search(r"\b(убей процесс|заверши процесс|kill process)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(убий процесс|заверши процесс|kill process)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "kill_process", "target": m.group(2).strip()}]
+    
+    # ── Яркость ───────────────────────────────────────────────────
+    if re.search(r"\b(яркост|brightn)\s*(?:на|до|at)?\s*(\d{1,3})\s*(?:%|процент\w*)?", raw, re.I):
+        m = re.search(r"\b(яркост|brightn)\s*(?:на|до|at)?\s*(\d{1,3})\s*(?:%|процент\w*)?", raw, re.I)
+        if m:
+            return "", [{"action": "brightness_set", "level": int(m.group(2))}]
+    if re.search(r"\b(ярче|brightness up)\b", t):
+        return "", [{"action": "brightness_up"}]
+    if re.search(r"\b(темнее|brightness down)\b", t):
+        return "", [{"action": "brightness_down"}]
+    if re.search(r"\b(какая яркость|brightness level)\b", t):
+        return "", [{"action": "brightness_get"}]
+    
+    # ── Перевод ──────────────────────────────────────────────────
+    if re.search(r"\b(переведи|translate)\s+(.+?)\s+(?:на|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(переведи|translate)\s+(.+?)\s+(?:на|to)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "translate", "text": m.group(2).strip(), "target_lang": m.group(3).strip()}]
+    
+    # ── YouTube музыка ────────────────────────────────────────────
+    if re.search(r"\b(включи|играй|play)\s+(.+?)\s+(?:на ютубе|youtube|в youtube)\b", raw, re.I):
+        m = re.search(r"\b(включи|играй|play)\s+(.+?)\s+(?:на ютубе|youtube|в youtube)\b", raw, re.I)
+        if m:
+            return "", [{"action": "play_youtube", "query": m.group(2).strip()}]
+    if re.search(r"\b(останови музыку|stop music)\b", t):
+        return "", [{"action": "stop_music"}]
+    
+    # ── Валюта ───────────────────────────────────────────────────
+    if re.search(r"\b(\d+)\s*(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(\d+)\s*(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
+        if m and any(cur in m.group(2).lower() for cur in ("доллар", "евро", "рубл", "сум", "$", "usd", "eur", "rub", "uzs")):
+            return "", [{"action": "convert_currency", "amount": float(m.group(1)), "from_cur": m.group(2).strip(), "to_cur": m.group(3).strip()}]
+    
+    # ── Поиск файлов ────────────────────────────────────────────
+    if re.search(r"\b(найди файл|find file)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(найди файл|find file)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "find_file", "name": m.group(2).strip()}]
+    
+    # ── GPU ──────────────────────────────────────────────────────
+    if re.search(r"\b(видеокарта|gpu|nvidia)\b", t) and "открой" not in t:
+        return "", [{"action": "gpu_stats"}]
+    
+    # ── Окна ────────────────────────────────────────────────────
+    if re.search(r"\b(разверни окно|maximize window)\b", t):
+        return "", [{"action": "maximize_window"}]
+    if re.search(r"\b(сверни окно|minimize window)\b", t):
+        return "", [{"action": "minimize_window"}]
+    if re.search(r"\b(переключи окно|switch window|alt tab)\b", t):
+        return "", [{"action": "switch_window"}]
+    
+    # ── Новости ──────────────────────────────────────────────────
+    if re.search(r"\b(новости|news)\b", t):
+        topic = ""
+        m = re.search(r"\b(новости|news)\s+(.+)$", raw, re.I)
+        if m:
+            topic = m.group(2).strip()
+        return "", [{"action": "get_news", "topic": topic}]
+    
+    # ── Файлы ────────────────────────────────────────────────────
+    if re.search(r"\b(список файлов|list files)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(список файлов|list files)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "list_files", "path": m.group(2).strip()}]
+    if re.search(r"\b(удали файл|delete file)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(удали файл|delete file)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "delete_file", "path": m.group(2).strip()}]
+    if re.search(r"\b(создай папку|create folder)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(создай папку|create folder)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "create_folder", "path": m.group(2).strip()}]
+    
+    # ── Таймеры питания ───────────────────────────────────────────
+    if re.search(r"\b(выключи через|shutdown in)\s+(\d+)\s*(?:минут|minutes?|секунд|seconds?)", raw, re.I):
+        m = re.search(r"\b(выключи через|shutdown in)\s+(\d+)\s*(?:минут|minutes?|секунд|seconds?)", raw, re.I)
+        if m:
+            value = int(m.group(2))
+            if "минут" in m.group(0).lower() or "min" in m.group(0).lower():
+                seconds = value * 60
+            else:
+                seconds = value
+            return "", [{"action": "schedule_shutdown", "seconds": seconds}]
+    if re.search(r"\b(отмени выключение|cancel shutdown)\b", t):
+        return "", [{"action": "cancel_shutdown"}]
+    if re.search(r"\b(статус выключения|shutdown status)\b", t):
+        return "", [{"action": "shutdown_status"}]
+    
+    # ── Системная информация ───────────────────────────────────────
+    if re.search(r"\b(системная информация|system info|инфо системы)\b", t):
+        return "", [{"action": "system_info"}]
+    if re.search(r"\b(сеть|network|ip)\b", t) and "открой" not in t:
+        return "", [{"action": "network_info"}]
+    
+    # ── Сценарии ─────────────────────────────────────────────────
+    if re.search(r"\b(создай сценарий|create scenario)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(создай сценарий|create scenario)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "create_scenario", "name": m.group(2).strip(), "actions": []}]
+    if re.search(r"\b(запусти сценарий|run scenario)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(запусти сценарий|run scenario)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "run_scenario", "name": m.group(2).strip()}]
+    if re.search(r"\b(список сценарие[вй]|list scenarios)\b", t):
+        return "", [{"action": "list_scenarios"}]
+    
+    # ── Wi-Fi ─────────────────────────────────────────────────────
+    if re.search(r"\b(список wifi|wifi сети|list wifi)\b", t):
+        return "", [{"action": "list_wifi"}]
+    if re.search(r"\b(подключись к wifi|connect wifi)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(подключись к wifi|connect wifi)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "connect_wifi", "ssid": m.group(2).strip(), "password": ""}]
+    if re.search(r"\b(отключись от wifi|disconnect wifi)\b", t):
+        return "", [{"action": "disconnect_wifi"}]
+    if re.search(r"\b(статус wifi|wifi статус|wifi status)\b", t):
+        return "", [{"action": "wifi_status"}]
+    
+    # ── Запись экрана ───────────────────────────────────────────
+    if re.search(r"\b(начни запись|start recording|запиши экран)\b", t):
+        return "", [{"action": "start_recording"}]
+    if re.search(r"\b(останови запись|stop recording)\b", t):
+        return "", [{"action": "stop_recording"}]
+    
+    # ── Сжатие файлов ───────────────────────────────────────────
+    if re.search(r"\b(сожми файлы|compress files)\b", t):
+        return "", [{"action": "compress", "files": [], "output": "archive.zip"}]
+    if re.search(r"\b(распакуй|extract)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(распакуй|extract)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "extract", "archive": m.group(2).strip(), "dest": "."}]
+    
+    # ── Поиск в файлах ───────────────────────────────────────────
+    if re.search(r"\b(найди в файлах|search in files)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(найди в файлах|search in files)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "search_in_files", "query": m.group(2).strip(), "path": "."}]
+    
+    # ── Камера ───────────────────────────────────────────────────
+    if re.search(r"\b(сделай фото|take photo|фотография)\b", t):
+        return "", [{"action": "take_photo"}]
+    
+    # ── Календарь ───────────────────────────────────────────────
+    if re.search(r"\b(события календаря|calendar events|расписание)\b", t):
+        return "", [{"action": "calendar_events"}]
+    if re.search(r"\b(создай событие|create event)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(создай событие|create event)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "create_event", "subject": m.group(2).strip(), "start": ""}]
+    
+    # ── Bluetooth ───────────────────────────────────────────────
+    if re.search(r"\b(список bluetooth|bluetooth устройства|list bluetooth)\b", t):
+        return "", [{"action": "list_bluetooth"}]
+    if re.search(r"\b(включи bluetooth|enable bluetooth)\b", t):
+        return "", [{"action": "enable_bluetooth"}]
+    if re.search(r"\b(выключи bluetooth|disable bluetooth)\b", t):
+        return "", [{"action": "disable_bluetooth"}]
+    
+    # ── Display ─────────────────────────────────────────────────
+    if re.search(r"\b(расширь экран|extend display|второй монитор)\b", t):
+        return "", [{"action": "extend_display"}]
+    if re.search(r"\b(дублируй экран|duplicate display)\b", t):
+        return "", [{"action": "duplicate_display"}]
+    if re.search(r"\b(основной экран|set primary display)\b", t):
+        return "", [{"action": "set_primary_display"}]
+    
+    # ── Ввод текста ─────────────────────────────────────────────
+    if re.search(r"\b(напиши текст|type text)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(напиши текст|type text)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "type_text", "text": m.group(2).strip()}]
+    if re.search(r"\b(нажми|press key)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(нажми|press key)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "press_key", "key": m.group(2).strip()}]
+    
+    # ── OCR скриншот ───────────────────────────────────────────
+    if re.search(r"\b(ocr скриншот|ocr screenshot|прочитай с экрана)\b", t):
+        return "", [{"action": "ocr_screenshot"}]
+    
+    # ── Перемещение файлов ───────────────────────────────────────
+    if re.search(r"\b(перемести файл|move file)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(перемести файл|move file)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "move_file", "src": m.group(2).strip(), "dst": m.group(3).strip()}]
+    if re.search(r"\b(переименуй файл|rename file)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(переименуй файл|rename file)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "rename_file", "old": m.group(2).strip(), "new": m.group(3).strip()}]
+    
+    # ── Сервисы ───────────────────────────────────────────────
+    if re.search(r"\b(список сервисов|list services)\b", t):
+        return "", [{"action": "list_services"}]
+    if re.search(r"\b(запусти сервис|start service)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(запусти сервис|start service)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "start_service", "name": m.group(2).strip()}]
+    if re.search(r"\b(останови сервис|stop service)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(останови сервис|stop service)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "stop_service", "name": m.group(2).strip()}]
+    
+    # ── Очистка временных файлов ────────────────────────────────
+    if re.search(r"\b(очисти временные|clean temp)\b", t):
+        return "", [{"action": "clean_temp"}]
+    if re.search(r"\b(очисти корзину полностью|empty recycle full)\b", t):
+        return "", [{"action": "empty_recycle_full"}]
+    
+    # ── Режимы питания ───────────────────────────────────────────
+    if re.search(r"\b(спящий режим|sleep mode)\b", t):
+        return "", [{"action": "sleep_mode"}]
+    if re.search(r"\b(гибернация|hibernate mode)\b", t):
+        return "", [{"action": "hibernate_mode"}]
+    
+    # ── Аудио устройства ───────────────────────────────────────
+    if re.search(r"\b(список аудио устройств|list audio devices)\b", t):
+        return "", [{"action": "list_audio_devices"}]
+    
+    # ── Напоминания ─────────────────────────────────────────────
+    if re.search(r"\b(какие напоминания|list reminders)\b", t):
+        return "", [{"action": "list_reminders"}]
+    if re.search(r"\b(удали напоминания|clear reminders)\b", t):
+        return "Удаляю все напоминания, сэр.", [{"action": "clear_reminders"}]
+    
+    # Команда не распознана или требует контекста
+    return None
+
+
 def _resolve_browser(text: str) -> str | None:
     t = _normalize(text)
     for word in sorted(BROWSER_WORDS, key=len, reverse=True):
@@ -215,7 +580,7 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
     t = _normalize(raw)
     ctx = ctx or {}
 
-    # ── Подтверждение опасных команд ──────────────────────────────
+    # ── Подтверждение опасных команд (ctx-dependent) ─────────────
     if ctx.get("awaiting_confirm"):
         if re.search(r"\b(да|подтвержда|confirm|yes|выполня|соглас)\b", t):
             action = ctx.pop("pending_action", None)
@@ -228,43 +593,7 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
             return "Отменено, сэр.", [{"action": "none"}]
         return "Сэр, скажите «да» для подтверждения или «нет» для отмены.", [{"action": "none"}]
 
-    # ── Протоколы (режимы из фильма) ──────────────────────────────
-    proto = match_protocol(raw)
-    if proto:
-        return proto
-
-    # ── Кто ты / JARVIS ───────────────────────────────────────────
-    if re.search(r"\b(кто ты|что ты|who are you|представься|ты jarvis|ты джарвис)\b", t):
-        from .personality import identity_line
-        return identity_line(), [{"action": "none"}]
-
-    # ── Быстрая помощь и предложения ─────────────────────────────
-    if re.search(r"\b(что умеешь|что ты умеешь|помощь|help|команды|что можешь)\b", t):
-        from .personality import quick_help_line
-        return quick_help_line(), [{"action": "none"}]
-
-    if re.search(r"\b(что предложишь|предложи|совет|идея|чем займемся|чем займёмся)\b", t):
-        from .personality import proactive_line
-        return proactive_line(), [{"action": "none"}]
-
-    if re.search(r"\b(перерыв|отдохнуть|устал|устала|break)\b", t):
-        return (
-            "Сэр, предлагаю десять минут перерыва: вода, разминка плеч и отдых для глаз. "
-            "Когда вернётесь, скажите «рабочий режим».",
-            [{"action": "none"}],
-        )
-
-    # ── Заметки и таймеры ────────────────────────────────────────
-    m = NOTE_RE.match(raw)
-    if m:
-        return "", [{"action": "create_note", "text": m.group(1).strip()}]
-
-    timer = _match_timer(raw)
-    if timer:
-        seconds, message = timer
-        return "", [{"action": "timer", "seconds": seconds, "message": message}]
-
-    # ── Погода ────────────────────────────────────────────────────
+    # ── Погода (ctx-dependent - использует default_city) ──────────
     m = WEATHER_RE.search(raw)
     if m:
         city = m.group(1).strip().rstrip(".")
@@ -274,57 +603,30 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
         city = (m.group(1) or ctx.get("default_city", "Moscow")).strip()
         return "", [{"action": "weather", "city": city}]
 
-    # ── Диагностика ───────────────────────────────────────────────
-    if re.search(r"\b(диагностик\w*|diagnostic\w*|сканирован\w*|проверь (?:все )?систем\w*)\b", t):
-        return "Запускаю диагностику, сэр.", [{"action": "diagnostics"}]
-
-    # ── Батарея ───────────────────────────────────────────────────
-    if re.search(r"\b(батаре|заряд|battery|аккумулятор)\b", t):
-        return "", [{"action": "battery"}]
-
-    # ── Рабочий стол ──────────────────────────────────────────────
-    if re.search(r"\b(покажи рабочий стол|сверни (?:все )?окн|show desktop|минимизируй)\b", t):
-        return "", [{"action": "show_desktop"}]
-
-    m = FOLDER_RE.match(raw)
-    if m:
-        return "", [{"action": "open_folder", "target": m.group(1).strip()}]
-
-    # ── Очистить корзину ──────────────────────────────────────────
-    if re.search(r"\b(очисти корзин|empty trash|пуст.*корзин)\b", t):
-        return "Очищаю корзину, сэр.", [{"action": "empty_trash"}]
-
-    # ── Громкость на N% (ПЕРВЫМ — до up/down) ────────────────────
+    # ── Громкость на N% (ctx-dependent - использует awaiting_volume) ─
     level = _match_volume_set(raw, ctx)
     if level is not None:
         ctx["awaiting_volume"] = False
         return "", [{"action": "volume_set", "level": level}]
 
-    # ── Текущая громкость ─────────────────────────────────────────
-    if re.search(r"\b(какая громкость|какой звук|сколько громк|уровень звук|volume level|how loud)\b", t):
-        return "", [{"action": "volume_get"}]
+    # ── Напоминания (ctx-dependent) ───────────────────────────────
+    if re.search(r"\b(напомни|remind)\s+(.+?)\s+(?:в|at)\s+(.+)$", raw, re.I):
+        m = re.search(r"\b(напомни|remind)\s+(.+?)\s+(?:в|at)\s+(.+)$", raw, re.I)
+        if m:
+            return "", [{"action": "add_reminder", "message": m.group(2).strip(), "when": m.group(3).strip()}]
 
-    # ── Громкость up/down/mute ────────────────────────────────────
-    if re.search(r"\b(громче|погромче|volume up|увелич.*громк)\b", t) and not re.search(r"\d", t):
-        return "", [{"action": "volume_up"}]
-    if re.search(r"\b(тише|потише|volume down)\b", t) and not re.search(r"\d", t):
-        return "", [{"action": "volume_down"}]
-    if re.search(r"\b(без звука|заглуш|mute|выключ.*звук)\b", t):
-        return "", [{"action": "volume_mute"}]
+    # ── Кэшируемый парсер для простых команд (ctx-independent) ────
+    cached_result = _try_parse_simple(raw)
+    if cached_result:
+        return cached_result
 
-    # ── Медиа ────────────────────────────────────────────────────
-    if re.search(r"\b(пауза|play pause|play|pause|продолжи|останови музыку|поставь на паузу)\b", t):
-        return "", [{"action": "media_play_pause"}]
-    if re.search(r"\b(следующий трек|следующая песня|next track|next song|дальше)\b", t):
-        return "", [{"action": "media_next"}]
-    if re.search(r"\b(предыдущий трек|предыдущая песня|previous track|prev song|назад трек)\b", t):
-        return "", [{"action": "media_previous"}]
-
+    # ── Контекстные команды (ctx-dependent) ───────────────────────
+    
     # Запоминаем контекст для follow-up «60»
     if _is_volume_context(t) and re.search(r"\b(на|до|установ|постав)\b", t):
         ctx["awaiting_volume"] = True
 
-    # ── Браузер + сайты ───────────────────────────────────────────
+    # ── Браузер + сайты (ctx-dependent) ───────────────────────────
     urls = _extract_urls(raw)
     browser = _resolve_browser(raw)
     if urls and (browser or "браузер" in t or "browser" in t or len(urls) >= 2):
@@ -340,39 +642,7 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
             return "Открываю сайт, сэр.", [{"action": "open_url", "target": urls[0], "browser": browser}]
         return f"Открываю {len(urls)} вкладки, сэр.", [{"action": "open_urls", "browser": browser or "msedge", "urls": urls}]
 
-    # ── Время / система ───────────────────────────────────────────
-    if re.search(r"\b(который час|какое время|сколько времени|what time)\b", t):
-        return "", [{"action": "show_time"}]
-    if re.search(r"\b(система|system info|нагрузка|cpu|память)\b", t) and "открой" not in t:
-        return "", [{"action": "system_info"}]
-    if re.search(r"\b(скриншот|screenshot|снимок экрана)\b", t):
-        return "", [{"action": "screenshot"}]
-
-    # ── Питание (с подтверждением) ────────────────────────────────
-    if re.search(r"\b(выключ\w*\s.*комп|shutdown|выключ.*пк)\b", t):
-        ctx["awaiting_confirm"] = True
-        ctx["pending_action"] = {"action": "shutdown"}
-        return "Сэр, вы уверены? Подтвердите выключение.", [{"action": "none"}]
-    if re.search(r"\b(перезагруз|restart|reboot)\b", t):
-        ctx["awaiting_confirm"] = True
-        ctx["pending_action"] = {"action": "restart"}
-        return "Сэр, подтвердите перезагрузку системы.", [{"action": "none"}]
-    if re.search(r"\b(заблокиру|lock|блокиров.*экран)\b", t):
-        return "Блокирую компьютер, сэр.", [{"action": "lock"}]
-
-    # ── Поиск ─────────────────────────────────────────────────────
-    m = SEARCH_RE.match(raw)
-    if m:
-        q = m.group(1).strip()
-        return f"Ищу «{q}», сэр.", [{"action": "search_web", "query": q}]
-
-    # ── Закрыть приложение ────────────────────────────────────────
-    m = CLOSE_RE.match(raw)
-    if m:
-        target = _resolve_app(m.group(1).strip())
-        return f"Закрываю {target}, сэр.", [{"action": "close_app", "target": target}]
-
-    # ── Составные команды: открыть приложение + открыть приложение ─────
+    # ── Составные команды (ctx-dependent) ────────────────────────
     compound_app_app = re.search(
         r"(?:открой|запусти|open|launch)\s+(.+?)\s+(?:и|and|затем|then|оттуда|потом)\s+(?:открой|запусти|open|launch)\s+(.+)$",
         raw, re.I
@@ -389,8 +659,6 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
             {"action": "open_app", "target": internal2}
         ]
 
-    # ── Составные команды: открыть приложение + создать заметку ─────
-    # Очень гибкий паттерн для любых сложных фраз с "напиши/запиши/впиши"
     compound_app_note = re.search(
         r"(?:открой|запусти|open|launch)\s+(\S+?).+?(?:напиши|запиши|впиши|write)\s+(.+)$",
         raw, re.I
@@ -398,7 +666,6 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
     if compound_app_note:
         app_name = compound_app_note.group(1).strip()
         note_text = compound_app_note.group(2).strip()
-        # Очищаем текст от лишних слов
         note_text = re.sub(r'^(?:там|в нём|в ней|в нем|there|in it)\s+', '', note_text, flags=re.I)
         internal = _resolve_app(app_name)
         label = app_name if app_name != internal else internal
@@ -407,261 +674,5 @@ def try_parse(text: str, ctx: dict | None = None) -> tuple[str, list[dict]] | No
             {"action": "create_note", "text": note_text}
         ]
 
-    # ── Открыть приложение ────────────────────────────────────────
-    app_match = _match_app_open(raw)
-    if app_match:
-        internal, spoken = app_match
-        label = spoken if spoken != internal else internal
-        return f"Запускаю {label}, сэр.", [{"action": "open_app", "target": internal}]
-
-    # ── Буфер обмена ────────────────────────────────────────────
-    if re.search(r"\b(что в буфере|прочитай буфер|clipboard read)\b", t):
-        return "", [{"action": "clipboard_read"}]
-    if re.search(r"\b(скопируй|copy to clipboard)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(скопируй|copy to clipboard)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "clipboard_copy", "text": m.group(2).strip()}]
-    if re.search(r"\b(очисти буфер|clear clipboard)\b", t):
-        return "Очищаю буфер обмена, сэр.", [{"action": "clipboard_clear"}]
-
-    # ── Процессы ─────────────────────────────────────────────────
-    if re.search(r"\b(топ процессов|процессы|processes|загрузка процесс)\b", t):
-        return "", [{"action": "get_top_processes"}]
-    if re.search(r"\b(убей процесс|заверши процесс|kill process)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(убей процесс|заверши процесс|kill process)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "kill_process", "target": m.group(2).strip()}]
-
-    # ── Яркость ───────────────────────────────────────────────────
-    if re.search(r"\b(яркост|brightn)\s*(?:на|до|at)?\s*(\d{1,3})\s*(?:%|процент\w*)?", raw, re.I):
-        m = re.search(r"\b(яркост|brightn)\s*(?:на|до|at)?\s*(\d{1,3})\s*(?:%|процент\w*)?", raw, re.I)
-        if m:
-            return "", [{"action": "brightness_set", "level": int(m.group(2))}]
-    if re.search(r"\b(ярче|brightness up)\b", t):
-        return "", [{"action": "brightness_up"}]
-    if re.search(r"\b(темнее|brightness down)\b", t):
-        return "", [{"action": "brightness_down"}]
-    if re.search(r"\b(какая яркость|brightness level)\b", t):
-        return "", [{"action": "brightness_get"}]
-
-    # ── Перевод ──────────────────────────────────────────────────
-    if re.search(r"\b(переведи|translate)\s+(.+?)\s+(?:на|to)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(переведи|translate)\s+(.+?)\s+(?:на|to)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "translate", "text": m.group(2).strip(), "target_lang": m.group(3).strip()}]
-
-    # ── Напоминания ─────────────────────────────────────────────
-    if re.search(r"\b(напомни|remind)\s+(.+?)\s+(?:в|at)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(напомни|remind)\s+(.+?)\s+(?:в|at)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "add_reminder", "message": m.group(2).strip(), "when": m.group(3).strip()}]
-    if re.search(r"\b(какие напоминания|list reminders)\b", t):
-        return "", [{"action": "list_reminders"}]
-    if re.search(r"\b(удали напоминания|clear reminders)\b", t):
-        return "Удаляю все напоминания, сэр.", [{"action": "clear_reminders"}]
-
-    # ── YouTube музыка ────────────────────────────────────────────
-    if re.search(r"\b(включи|играй|play)\s+(.+?)\s+(?:на ютубе|youtube|в youtube)\b", raw, re.I):
-        m = re.search(r"\b(включи|играй|play)\s+(.+?)\s+(?:на ютубе|youtube|в youtube)\b", raw, re.I)
-        if m:
-            return "", [{"action": "play_youtube", "query": m.group(2).strip()}]
-    if re.search(r"\b(останови музыку|stop music)\b", t):
-        return "", [{"action": "stop_music"}]
-
-    # ── Валюта ───────────────────────────────────────────────────
-    if re.search(r"\b(\d+)\s*(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(\d+)\s*(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
-        if m and any(cur in m.group(2).lower() for cur in ("доллар", "евро", "рубл", "сум", "$", "usd", "eur", "rub", "uzs")):
-            return "", [{"action": "convert_currency", "amount": float(m.group(1)), "from_cur": m.group(2).strip(), "to_cur": m.group(3).strip()}]
-
-    # ── Поиск файлов ────────────────────────────────────────────
-    if re.search(r"\b(найди файл|find file)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(найди файл|find file)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "find_file", "name": m.group(2).strip()}]
-
-    # ── GPU ──────────────────────────────────────────────────────
-    if re.search(r"\b(видеокарта|gpu|nvidia)\b", t) and "открой" not in t:
-        return "", [{"action": "gpu_stats"}]
-
-    # ── Окна ────────────────────────────────────────────────────
-    if re.search(r"\b(разверни окно|maximize window)\b", t):
-        return "", [{"action": "maximize_window"}]
-    if re.search(r"\b(сверни окно|minimize window)\b", t):
-        return "", [{"action": "minimize_window"}]
-    if re.search(r"\b(переключи окно|switch window|alt tab)\b", t):
-        return "", [{"action": "switch_window"}]
-
-    # ── Новости ──────────────────────────────────────────────────
-    if re.search(r"\b(новости|news)\b", t):
-        topic = ""
-        m = re.search(r"\b(новости|news)\s+(.+)$", raw, re.I)
-        if m:
-            topic = m.group(2).strip()
-        return "", [{"action": "get_news", "topic": topic}]
-
-    # ── Файлы ────────────────────────────────────────────────────
-    if re.search(r"\b(список файлов|list files)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(список файлов|list files)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "list_files", "path": m.group(2).strip()}]
-    if re.search(r"\b(удали файл|delete file)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(удали файл|delete file)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "delete_file", "path": m.group(2).strip()}]
-    if re.search(r"\b(создай папку|create folder)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(создай папку|create folder)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "create_folder", "path": m.group(2).strip()}]
-
-    # ── Таймеры питания ───────────────────────────────────────────
-    if re.search(r"\b(выключи через|shutdown in)\s+(\d+)\s*(?:минут|minutes?|секунд|seconds?)", raw, re.I):
-        m = re.search(r"\b(выключи через|shutdown in)\s+(\d+)\s*(?:минут|minutes?|секунд|seconds?)", raw, re.I)
-        if m:
-            value = int(m.group(2))
-            if "минут" in m.group(0).lower() or "min" in m.group(0).lower():
-                seconds = value * 60
-            else:
-                seconds = value
-            return "", [{"action": "schedule_shutdown", "seconds": seconds}]
-    if re.search(r"\b(отмени выключение|cancel shutdown)\b", t):
-        return "", [{"action": "cancel_shutdown"}]
-    if re.search(r"\b(статус выключения|shutdown status)\b", t):
-        return "", [{"action": "shutdown_status"}]
-
-    # ── Системная информация ───────────────────────────────────────
-    if re.search(r"\b(системная информация|system info|инфо системы)\b", t):
-        return "", [{"action": "system_info"}]
-    if re.search(r"\b(сеть|network|ip)\b", t) and "открой" not in t:
-        return "", [{"action": "network_info"}]
-
-    # ── Сценарии ─────────────────────────────────────────────────
-    if re.search(r"\b(создай сценарий|create scenario)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(создай сценарий|create scenario)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "create_scenario", "name": m.group(2).strip(), "actions": []}]
-    if re.search(r"\b(запусти сценарий|run scenario)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(запусти сценарий|run scenario)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "run_scenario", "name": m.group(2).strip()}]
-    if re.search(r"\b(список сценарие[вй]|list scenarios)\b", t):
-        return "", [{"action": "list_scenarios"}]
-
-    # ── Wi-Fi ─────────────────────────────────────────────────────
-    if re.search(r"\b(список wifi|wifi сети|list wifi)\b", t):
-        return "", [{"action": "list_wifi"}]
-    if re.search(r"\b(подключись к wifi|connect wifi)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(подключись к wifi|connect wifi)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "connect_wifi", "ssid": m.group(2).strip(), "password": ""}]
-    if re.search(r"\b(отключись от wifi|disconnect wifi)\b", t):
-        return "", [{"action": "disconnect_wifi"}]
-    if re.search(r"\b(статус wifi|wifi статус|wifi status)\b", t):
-        return "", [{"action": "wifi_status"}]
-
-    # ── Запись экрана ───────────────────────────────────────────
-    if re.search(r"\b(начни запись|start recording|запиши экран)\b", t):
-        return "", [{"action": "start_recording"}]
-    if re.search(r"\b(останови запись|stop recording)\b", t):
-        return "", [{"action": "stop_recording"}]
-
-    # ── Сжатие файлов ───────────────────────────────────────────
-    if re.search(r"\b(сожми файлы|compress files)\b", t):
-        return "", [{"action": "compress", "files": [], "output": "archive.zip"}]
-    if re.search(r"\b(распакуй|extract)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(распакуй|extract)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "extract", "archive": m.group(2).strip(), "dest": "."}]
-
-    # ── Поиск в файлах ───────────────────────────────────────────
-    if re.search(r"\b(найди в файлах|search in files)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(найди в файлах|search in files)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "search_in_files", "query": m.group(2).strip(), "path": "."}]
-
-    # ── Камера ───────────────────────────────────────────────────
-    if re.search(r"\b(сделай фото|take photo|фотография)\b", t):
-        return "", [{"action": "take_photo"}]
-
-    # ── Календарь ───────────────────────────────────────────────
-    if re.search(r"\b(события календаря|calendar events|расписание)\b", t):
-        return "", [{"action": "calendar_events"}]
-    if re.search(r"\b(создай событие|create event)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(создай событие|create event)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "create_event", "subject": m.group(2).strip(), "start": ""}]
-
-    # ── Bluetooth ───────────────────────────────────────────────
-    if re.search(r"\b(список bluetooth|bluetooth устройства|list bluetooth)\b", t):
-        return "", [{"action": "list_bluetooth"}]
-    if re.search(r"\b(включи bluetooth|enable bluetooth)\b", t):
-        return "", [{"action": "enable_bluetooth"}]
-    if re.search(r"\b(выключи bluetooth|disable bluetooth)\b", t):
-        return "", [{"action": "disable_bluetooth"}]
-
-    # ── Display ─────────────────────────────────────────────────
-    if re.search(r"\b(расширь экран|extend display|второй монитор)\b", t):
-        return "", [{"action": "extend_display"}]
-    if re.search(r"\b(дублируй экран|duplicate display)\b", t):
-        return "", [{"action": "duplicate_display"}]
-    if re.search(r"\b(основной монитор|primary display|set primary)\b", t):
-        return "", [{"action": "set_primary_display"}]
-
-    # ── Keyboard ────────────────────────────────────────────────
-    if re.search(r"\b(напиши|введи|type)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(напиши|введи|type)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "type_text", "text": m.group(2).strip()}]
-    if re.search(r"\b(нажми|press)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(нажми|press)\s+(.+)$", raw, re.I)
-        if m:
-            key = m.group(2).strip()
-            # Очищаем от лишних слов "клавишу"
-            key = re.sub(r'^(?:клавишу|key)\s+', '', key, flags=re.I)
-            # Заменяем русские названия на английские для pyautogui
-            key = key.replace('плюс', '+').replace('плюс', '+')
-            return "", [{"action": "press_key", "key": key}]
-
-    # ── OCR ───────────────────────────────────────────────────
-    if re.search(r"\b(распознай текст|ocr|recognize text)\b", t):
-        return "", [{"action": "ocr_screenshot"}]
-
-    # ── File Operations ─────────────────────────────────────────
-    if re.search(r"\b(перемести|move)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(перемести|move)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "move_file", "src": m.group(2).strip(), "dst": m.group(3).strip()}]
-    if re.search(r"\b(переименуй|rename)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(переименуй|rename)\s+(.+?)\s+(?:в|to)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "rename_file", "old": m.group(2).strip(), "new": m.group(3).strip()}]
-
-    # ── Services ───────────────────────────────────────────────
-    if re.search(r"\b(список служб|list services)\b", t):
-        return "", [{"action": "list_services"}]
-    if re.search(r"\b(запусти службу|start service)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(запусти службу|start service)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "start_service", "name": m.group(2).strip()}]
-    if re.search(r"\b(останови службу|stop service)\s+(.+)$", raw, re.I):
-        m = re.search(r"\b(останови службу|stop service)\s+(.+)$", raw, re.I)
-        if m:
-            return "", [{"action": "stop_service", "name": m.group(2).strip()}]
-
-    # ── Disk Cleanup ────────────────────────────────────────────
-    if re.search(r"\b(очисти временные|clean temp|temp files)\b", t):
-        return "", [{"action": "clean_temp"}]
-    if re.search(r"\b(полностью очисти корзину|empty recycle full)\b", t):
-        return "", [{"action": "empty_recycle_full"}]
-
-    # ── Power Modes ────────────────────────────────────────────
-    if re.search(r"\b(спящий режим|sleep mode|сон)\b", t):
-        return "", [{"action": "sleep_mode"}]
-    if re.search(r"\b(гибернация|hibernate)\b", t):
-        return "", [{"action": "hibernate_mode"}]
-
-    # ── Audio Devices ──────────────────────────────────────────
-    if re.search(r"\b(список аудио|audio devices|звуковые устройства)\b", t):
-        return "", [{"action": "list_audio_devices"}]
-
+    # Команда не распознана
     return None
