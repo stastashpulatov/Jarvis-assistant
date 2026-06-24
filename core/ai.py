@@ -353,15 +353,15 @@ class GeminiAI:
             "options": {
                 "temperature": float(self.cfg["ollama"]["temperature"]),
                 "num_predict": int(self.cfg["ollama"]["num_predict"]),
-                "num_ctx": 512,  # Ещё больше уменьшен контекст для скорости
+                "num_ctx": 256,  # Минимальный контекст для максимальной скорости
                 "num_thread": 4,  # Многопоточность
                 "use_mmap": True,  # Маппинг памяти для скорости
                 "num_gpu": 1,  # Использование GPU
                 "num_batch": 1,  # Оптимизация батчинга
                 "repeat_last_n": 0,  # Отключаем повторения для скорости
                 "repeat_penalty": 1.1,  # Штраф за повторения
-                "top_k": 20,  # Оптимизация выборки
-                "top_p": 0.9,  # Оптимизация выборки
+                "top_k": 10,  # Ещё агрессивнее выборка
+                "top_p": 0.8,  # Ещё агрессивнее выборка
             },
         }
         try:

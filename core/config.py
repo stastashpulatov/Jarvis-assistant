@@ -7,19 +7,19 @@ _DEFAULT_CONFIG = {
     "A": {
         "name": "J.A.R.V.I.S.",
         "wakeword": "джарвис",
-        "command_timeout": 10,  # Уменьшено для скорости
+        "command_timeout": 8,  # Уменьшено для скорости
         "idle_timeout": 60,
         "always_on": True,
     },
     "audio": {
-        "silence_timeout": 0.5,  # Уменьшено для скорости
+        "silence_timeout": 0.4,  # Ещё меньше для скорости
         "energy_threshold": 300,
-        "phrase_limit": 3,  # Уменьшено для скорости
+        "phrase_limit": 2,  # Ещё меньше для скорости
     },
     "voice": {
         "engine": "silero",
         "silero_speaker": "aidar",
-        "offline_rate": 180,  # Увеличено для скорости речи
+        "offline_rate": 200,  # Ещё быстрее речь
         "offline_volume": 1.0,
         "rvc_pitch_shift": 0,
         "enable_rvc": False,  # Отключено для скорости
@@ -39,9 +39,9 @@ _DEFAULT_CONFIG = {
         "base_url": "http://127.0.0.1:11434",
         "model": "qwen2.5:7b-instruct",
         "fallback_model": "qwen2.5:3b-instruct",
-        "num_predict": 80,  # Уменьшено для скорости
+        "num_predict": 60,  # Ещё меньше для скорости
         "temperature": 0.7,
-        "timeout": 10,  # Уменьшено для скорости
+        "timeout": 15,  # Увеличен для стабильности
         "stream": True,  # Стриминг для мгновенных ответов
     },
     "logging": {
