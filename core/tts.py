@@ -314,13 +314,34 @@ class TTSEngine:
     # ── speak ────────────────────────────────────────────────────
 
     def speak(self, text: str, stream: bool = False):
+        """Озвучивает текст.
+        
+        stream=True — разбивает на предложения и озвучивает каждое сразу,
+        не дожидаясь генерации всего текста. Уменьшает воспринимаемую задержку.
+        """
         if not text or not text.strip():
             return
+        if stream:
+            self._speak_stream(text)
+        else:
+            with self._lock:
+                if self._mode == "silero":
+                    self._speak_silero(text)
+                else:
+                    self._speak_pyttsx3(text)
+
+    def _speak_stream(self, text: str):
+        """Озвучивает текст предложение за предложением без блокировки на весь текст."""
+        import re as _re
+        sentences = [s.strip() for s in _re.split(r'(?<=[.!?…])\s+', text) if s.strip()]
+        if not sentences:
+            return
         with self._lock:
-            if self._mode == "silero":
-                self._speak_silero(text)
-            else:
-                self._speak_pyttsx3(text)
+            for sentence in sentences:
+                if self._mode == "silero":
+                    self._speak_silero(sentence)
+                else:
+                    self._speak_pyttsx3(sentence)
 
     def _play_audio(self, arr, sr):
         """

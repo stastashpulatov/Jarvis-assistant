@@ -2,8 +2,12 @@
 import copy
 import os
 import yaml
-from dotenv import load_dotenv
-load_dotenv()
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv не установлен — секреты берём только из окружения
 
 _DEFAULT_CONFIG = {
     "A": {
@@ -89,8 +93,11 @@ def load_config(path: str = "config.yaml") -> dict:
             print(f"[КОНФИГ] Ошибка чтения config.yaml: {e}. Использую настройки по умолчанию.")
     else:
         print("[КОНФИГ] config.yaml не найден, использую настройки по умолчанию.")
-    
+
+    # Переменные окружения перекрывают config.yaml (никогда не коммить ключи в репо)
     if os.getenv("GEMINI_API_KEY"):
         cfg["gemini"]["api_key"] = os.getenv("GEMINI_API_KEY")
-    
+    if os.getenv("TELEGRAM_TOKEN"):
+        cfg["jarvis"]["telegram_token"] = os.getenv("TELEGRAM_TOKEN")
+
     return cfg

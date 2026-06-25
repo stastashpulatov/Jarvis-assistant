@@ -2,15 +2,15 @@
 Главный оркестратор Джарвиса.
 Связывает STT → wake word → AI → TTS → CommandRouter.
 """
-import time
 import re
+import time
 
 from .config         import load_config
 from .logger         import Logger
 from .stt            import STTEngine
 from .tts            import TTSEngine
 from .wakeword       import is_wake, is_deactivate, strip_wake
-from .ai             import GeminiAI
+from .ai             import AIEngine
 from .command_router import CommandRouter
 from .local_parser   import try_parse
 from .personality    import (
@@ -96,15 +96,12 @@ class Assistant:
 """)
         print(f"  Скажите {gold}«{w}»{reset} для активации\n")
 
-    def speak(self, text: str):
+    def speak(self, text: str, stream: bool = False):
         self.log.jarvis(text)
-        # Воспроизводим звук активации перед речью (опционально для скорости)
-        # if self.sound_effects:
-        #     self.sound_effects.play_in_background("activation")
-        self.tts.speak(text)
+        self.tts.speak(text, stream=stream)
 
     def _process(self, user_text: str):
-        """Локальный парсер первым — Gemini только для сложных фраз."""
+        """Локальный парсер первым — AI только для сложных фраз."""
         self.log.you(user_text)
         
         # Проверка подтверждения опасных команд
@@ -119,23 +116,19 @@ class Assistant:
         if local:
             speech, actions = local
             self.log.info("АССИСТЕНТ", "Локальный парсер (мгновенно)")
+            # Локальные ответы короткие — stream не нужен
+            if speech:
+                self.speak(speech, stream=False)
         else:
             speech, actions = self.ai.ask(user_text)
             if speech and ("не могу" in speech.lower() or "только увелич" in speech.lower()):
                 if any(w in user_text.lower() for w in ("звук", "громк", "volume")):
                     self._ctx["awaiting_volume"] = True
-
-        if speech:
-            # Streaming TTS: разбиваем на предложения и озвучиваем по очереди
-            sentences = re.split(r'(?<=[.!?])\s+', speech)
-            if sentences:
-                self.speak(sentences[0])
-                for sent in sentences[1:]:
-                    if sent.strip():
-                        self.speak(sent)
+            # AI-ответы могут быть длиннее — включаем streaming TTS
+            if speech:
+                self.speak(speech, stream=True)
 
         if actions:
-            # Выполняем действия асинхронно для скорости
             import threading
             def run_actions():
                 self.router.route_all(actions, self.tts)
